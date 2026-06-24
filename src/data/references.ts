@@ -127,4 +127,25 @@ export const sourceReferences: SourceReference[] = [
     topics: ['消防', '甲类仓库', '乙类仓库', '配电房', '防火间距'],
     summary: '危险性仓储与配电房/变配电设施的关系需按仓库类别、储量、耐火等级、是否独立建筑和防火分隔条件进入条文级校核。',
   },
+  {
+    id: 'jgj-dormitory-design-path',
+    sourceId: 'jgj-36-2016',
+    label: '宿舍建筑设计规范路径',
+    topics: ['宿舍', '居室', '辅助用房', '卫生间', '安全'],
+    summary: '宿舍单体应进一步查居室面积、辅助用房、卫生间、公共活动空间、安全疏散和无障碍等专题条文。',
+  },
+  {
+    id: 'jgj-dietetic-building-path',
+    sourceId: 'jgj-64-2017',
+    label: '饮食建筑设计标准路径',
+    topics: ['食堂', '厨房', '餐饮', '燃气', '排油烟'],
+    summary: '食堂和厨房应进一步查餐厅、厨房、备餐、燃气、排油烟、卫生防疫、货物流线和消防相关条文。',
+  },
+  {
+    id: 'jgj-exhibition-building-path',
+    sourceId: 'jgj-218-2010',
+    label: '展览建筑设计规范路径',
+    topics: ['展厅', '展览', '公众开放', '人流', '布展'],
+    summary: '展厅应进一步查展览空间、观众流线、疏散、临时布展、展品荷载、公共开放和配套服务空间等专题条文。',
+  },
 ]

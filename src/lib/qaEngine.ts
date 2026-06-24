@@ -5,9 +5,27 @@ function includesAny(text: string, words: string[]) {
   return words.some((word) => text.includes(word))
 }
 
-export function answerProjectQuestion(project: ProjectCase, rawQuestion: string): GroundedAnswer {
+export function answerProjectQuestion(project: ProjectCase, rawQuestion: string, loadedSourceIds: string[] = []): GroundedAnswer {
   const question = rawQuestion.trim()
   const findings = getFindingsForProject(project)
+
+  if (loadedSourceIds.length === 0) {
+    return {
+      question,
+      conclusion:
+        '当前尚未加载规范包，因此系统不会给出规范结论。请先根据项目所在地和楼栋组成点击“加载推荐规范包”，或手动加载相关资料源后再提问。',
+      appliesTo: project.buildings.length > 0 ? project.buildings.map((building) => building.name) : ['项目尚未录入楼栋'],
+      assumptions: ['规范包未加载', '回答不得脱离已加载资料源和引用索引'],
+      nextChecks: [
+        '先录入项目所在地、项目类型和楼栋组成。',
+        '点击“加载推荐规范包”。',
+        '确认问题对应的资料源已处于 loaded 状态。',
+      ],
+      sourceIds: [],
+      referenceIds: [],
+      uncertainty: '未加载规范包时，系统只能提示工作流，不能回答具体规范问题。',
+    }
+  }
 
   if (includesAny(question, ['前期风险', '风险清单', '有哪些风险', '提示需求'])) {
     const highFindings = findings.filter((finding) => finding.severity === 'high')
@@ -113,8 +131,14 @@ export function answerProjectQuestion(project: ProjectCase, rawQuestion: string)
         '确认食堂与宿舍门厅、楼梯、电梯、管井的防火关系。',
         '确认宿舍人数、疏散宽度和安全出口数量。',
       ],
-      sourceIds: ['gb-55037-2022', 'gb-50016-2014-2018', 'gb-55031-2022'],
-      referenceIds: ['gb-fire-industrial-civil-path', 'zs-5-9-4-dormitory-design', 'zs-5-7-2-dormitory-spacing'],
+      sourceIds: ['gb-55037-2022', 'gb-50016-2014-2018', 'gb-55031-2022', 'jgj-36-2016', 'jgj-64-2017'],
+      referenceIds: [
+        'gb-fire-industrial-civil-path',
+        'zs-5-9-4-dormitory-design',
+        'zs-5-7-2-dormitory-spacing',
+        'jgj-dormitory-design-path',
+        'jgj-dietetic-building-path',
+      ],
       uncertainty: '需要食堂规模、厨房条件和宿舍人数后才能进入条文级校核。',
     }
   }
@@ -131,8 +155,8 @@ export function answerProjectQuestion(project: ProjectCase, rawQuestion: string)
         '确认是否有临时展陈、可燃展品或大空间装修。',
         '确认展厅与厂房、总部、停车库的连通方式。',
       ],
-      sourceIds: ['gb-55037-2022', 'gb-50016-2014-2018'],
-      referenceIds: ['gb-fire-industrial-civil-path', 'zs-5-9-6-commercial-exhibition', 'zs-7-4-2-parking'],
+      sourceIds: ['gb-55037-2022', 'gb-50016-2014-2018', 'jgj-218-2010'],
+      referenceIds: ['gb-fire-industrial-civil-path', 'zs-5-9-6-commercial-exhibition', 'zs-7-4-2-parking', 'jgj-exhibition-building-path'],
       uncertainty: '展厅使用模式和人数决定后，才能判断是否触发更严格公共建筑控制。',
     }
   }
