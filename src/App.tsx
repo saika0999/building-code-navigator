@@ -20,7 +20,16 @@ import { sourceReferences } from './data/references'
 import { sources } from './data/sources'
 import { answerProjectQuestion } from './lib/qaEngine'
 import { getFindingsForProject, getSourceIdsForProject, getUnknownsForProject } from './lib/ruleEngine'
-import type { BuildingAsset, BuildingUse, FireHazard, GeneratedFinding, ProjectCase, ProjectType, RegionId } from './types/domain'
+import type {
+  BuildingAsset,
+  BuildingUse,
+  FireHazard,
+  GeneratedFinding,
+  ProjectCase,
+  ProjectType,
+  RegionId,
+  SourceManifest,
+} from './types/domain'
 
 const emptyProject: ProjectCase = {
   id: 'draft-project',
@@ -28,8 +37,8 @@ const emptyProject: ProjectCase = {
   region: 'zhongshan',
   projectType: 'industrial-upstairs',
   stage: 'pre_design',
-  description: '从项目条件和楼栋组成开始，加载规范包后生成查阅路径、风险提示和带来源回答。',
-  assumptions: ['项目条件由用户手动录入。未加载规范包前，系统不输出规范结论。'],
+  description: '从项目条件和楼栋组成开始，加载规范索引后生成查阅路径、风险提示和带来源回答。',
+  assumptions: ['项目条件由用户手动录入。未加载规范索引前，系统不输出规范结论。'],
   siteConditions: {
     hasIndependentWarehouse: false,
     warehouseFireHazard: 'unknown',
@@ -152,6 +161,48 @@ function referencesFor(ids: string[] = [], loadedSourceIds: string[]) {
     .filter((reference) => loadedSourceIds.includes(reference.sourceId))
 }
 
+type LocalSourceState = {
+  indexLoaded: boolean
+  documentReady: boolean
+}
+
+type LocalSourceStatus = Record<string, LocalSourceState>
+
+const sourceStatusStorageKey = 'building-code-navigator-source-status-v1'
+
+function defaultSourceState(): LocalSourceState {
+  return { indexLoaded: false, documentReady: false }
+}
+
+function readStoredSourceStatus(): LocalSourceStatus {
+  if (typeof window === 'undefined') {
+    return {}
+  }
+
+  try {
+    const stored = window.localStorage.getItem(sourceStatusStorageKey)
+    return stored ? (JSON.parse(stored) as LocalSourceStatus) : {}
+  } catch {
+    return {}
+  }
+}
+
+function saveSourceStatus(status: LocalSourceStatus) {
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(sourceStatusStorageKey, JSON.stringify(status))
+  }
+}
+
+function sourceState(status: LocalSourceStatus, sourceId: string): LocalSourceState {
+  return { ...defaultSourceState(), ...status[sourceId] }
+}
+
+function sourceLibraryPath(source: SourceManifest) {
+  const region = source.jurisdiction.replace(/[^\w\u4e00-\u9fa5-]+/g, '-')
+  const fileName = (source.code ?? source.id).replace(/[^\w\u4e00-\u9fa5-]+/g, '-')
+  return `local-library/documents/${region}/${fileName}.pdf`
+}
+
 function App() {
   const [project, setProject] = useState<ProjectCase>(() => structuredClone(emptyProject))
   const [buildingType, setBuildingType] = useState(buildingTemplates[0].label)
@@ -159,13 +210,18 @@ function App() {
   const [buildingFloors, setBuildingFloors] = useState('8')
   const [query, setQuery] = useState('这个项目有哪些前期风险？')
   const [selectedQuestion, setSelectedQuestion] = useState(query)
-  const [loadedSourceIds, setLoadedSourceIds] = useState<string[]>([])
+  const [sourceStatus, setSourceStatus] = useState<LocalSourceStatus>(() => readStoredSourceStatus())
 
   const findings = useMemo(() => getFindingsForProject(project), [project])
   const unknowns = useMemo(() => getUnknownsForProject(project), [project])
   const recommendedSourceIds = useMemo(() => getSourceIdsForProject(project), [project])
   const recommendedSources = sources.filter((source) => recommendedSourceIds.includes(source.id))
+  const loadedSourceIds = useMemo(
+    () => sources.filter((source) => sourceState(sourceStatus, source.id).indexLoaded).map((source) => source.id),
+    [sourceStatus],
+  )
   const loadedSources = sources.filter((source) => loadedSourceIds.includes(source.id))
+  const documentReadyCount = sources.filter((source) => sourceState(sourceStatus, source.id).documentReady).length
   const answer = useMemo(
     () => answerProjectQuestion(project, selectedQuestion, loadedSourceIds),
     [loadedSourceIds, project, selectedQuestion],
@@ -177,15 +233,41 @@ function App() {
   ).length
 
   function loadRecommendedPackage() {
-    setLoadedSourceIds((current) => Array.from(new Set(current.concat(recommendedSourceIds))))
+    setSourceStatus((current) => {
+      const next = { ...current }
+      recommendedSourceIds.forEach((sourceId) => {
+        next[sourceId] = { ...defaultSourceState(), ...next[sourceId], indexLoaded: true }
+      })
+      saveSourceStatus(next)
+      return next
+    })
   }
 
   function loadSource(sourceId: string) {
-    setLoadedSourceIds((current) => (current.includes(sourceId) ? current : current.concat(sourceId)))
+    updateSourceState(sourceId, { indexLoaded: true })
   }
 
   function unloadSource(sourceId: string) {
-    setLoadedSourceIds((current) => current.filter((id) => id !== sourceId))
+    updateSourceState(sourceId, { indexLoaded: false })
+  }
+
+  function markDocumentReady(sourceId: string) {
+    updateSourceState(sourceId, { indexLoaded: true, documentReady: true })
+  }
+
+  function unmarkDocumentReady(sourceId: string) {
+    updateSourceState(sourceId, { documentReady: false })
+  }
+
+  function updateSourceState(sourceId: string, patch: Partial<LocalSourceState>) {
+    setSourceStatus((current) => {
+      const next = {
+        ...current,
+        [sourceId]: { ...defaultSourceState(), ...current[sourceId], ...patch },
+      }
+      saveSourceStatus(next)
+      return next
+    })
   }
 
   function addBuilding() {
@@ -248,7 +330,8 @@ function App() {
 
   function loadZhongshanTemplate() {
     setProject(structuredClone(zhongshanIndustrialUpstairsCase))
-    setLoadedSourceIds([])
+    setSourceStatus({})
+    saveSourceStatus({})
     setQuery('这个项目有哪些前期风险？')
     setSelectedQuestion('这个项目有哪些前期风险？')
   }
@@ -285,14 +368,14 @@ function App() {
         <header className="topbar">
           <div>
             <p className="eyebrow">Generic Building Code Navigator</p>
-            <h1>先录入项目，再加载规范包，最后生成风险和回答</h1>
+            <h1>先录入项目，再加载规范索引，最后生成风险和回答</h1>
             <p className="lead">
-              这个页面不是为某个固定项目写死的。你可以手动添加厂房、总部、宿舍食堂、展厅、仓库、配电房等单体；系统会根据录入内容推荐规范包，加载后再给出带来源的提示。
+              这个页面不是为某个固定项目写死的。你可以手动添加厂房、总部、宿舍食堂、展厅、仓库、配电房等单体；系统会根据录入内容推荐资料源，加载索引后再给出带来源的提示。
             </p>
           </div>
           <div className="status-stack">
             <span><Building2 aria-hidden="true" />{project.buildings.length} 栋/组建筑</span>
-            <span><Database aria-hidden="true" />{loadedSourceIds.length} 份资料已加载</span>
+            <span><Database aria-hidden="true" />{loadedSourceIds.length} 份索引已加载</span>
             <span><AlertTriangle aria-hidden="true" />{highRiskCount} 个高风险</span>
           </div>
         </header>
@@ -456,29 +539,43 @@ function App() {
           <div className="section-title">
             <div>
               <p className="eyebrow">Code Package</p>
-              <h2>规范包加载与下载入口</h2>
+              <h2>规范索引与本地资料库</h2>
             </div>
             <button type="button" className="primary-button" onClick={loadRecommendedPackage}>
-              <Download aria-hidden="true" />加载推荐规范包
+              <Download aria-hidden="true" />加载推荐索引包
             </button>
           </div>
 
           <div className="library-status">
             <div>
-              <strong>{loadedSourceIds.length > 0 ? '规范包已加载' : '尚未加载规范包'}</strong>
-              <p>未加载规范包时，问答只能提示需要先加载资料源；加载后才会显示引用索引和查阅路径。</p>
+              <strong>{loadedSourceIds.length > 0 ? '规范索引已加载' : '尚未加载规范索引'}</strong>
+              <p>索引用于生成风险、查阅路径和带来源回答；PDF 全文是否已在本地资料库中，会在每张规范卡片上单独显示。</p>
             </div>
             <div>
               <span>推荐资料源</span>
               <strong>{recommendedSources.length} 份</strong>
             </div>
+            <div>
+              <span>本地全文就绪</span>
+              <strong>{documentReadyCount} 份</strong>
+            </div>
+          </div>
+
+          <div className="library-note">
+            <strong>下载位置与调用方式</strong>
+            <p>
+              当前网页预览不能静默写入电脑固定文件夹。项目约定的本地资料库是 <code>local-library/documents/城市或层级/规范编号.pdf</code>；
+              下一步接入本地下载器后，“一键下载”会把官方文件保存到这个目录，问答/RAG 再从已标记为“全文已就绪”的文件读取全文。现在可以先打开官方文件并手动标记本地已有。
+            </p>
           </div>
 
           <div className="source-grid">
             {recommendedSources.map((source) => {
-              const loaded = loadedSourceIds.includes(source.id)
+              const state = sourceState(sourceStatus, source.id)
+              const loaded = state.indexLoaded
+              const documentReady = state.documentReady
               return (
-                <article key={source.id} className={`source-card ${loaded ? 'loaded' : ''}`}>
+                <article key={source.id} className={`source-card ${loaded ? 'loaded' : 'not-loaded'} ${documentReady ? 'document-ready' : ''}`}>
                   <div className="card-head">
                     <MapPinned aria-hidden="true" />
                     <span>{source.jurisdiction}</span>
@@ -486,9 +583,14 @@ function App() {
                   <h3>{source.title}</h3>
                   <p>{source.notes}</p>
                   <div className="tag-row">
-                    <span>{loaded ? 'loaded' : 'not loaded'}</span>
+                    <span className={loaded ? 'status-pill index-loaded' : 'status-pill missing'}>{loaded ? '索引已加载' : '索引未加载'}</span>
+                    <span className={documentReady ? 'status-pill document-ready' : 'status-pill missing'}>{documentReady ? '全文已就绪' : '全文未下载'}</span>
                     <span>{source.access}</span>
                     <span>{source.redistribution}</span>
+                  </div>
+                  <div className="library-path">
+                    <span>本地调用路径</span>
+                    <code>{sourceLibraryPath(source)}</code>
                   </div>
                   <div className="source-actions">
                     <button type="button" onClick={() => (loaded ? unloadSource(source.id) : loadSource(source.id))}>
@@ -497,6 +599,9 @@ function App() {
                     <a href={source.downloadUrl ?? source.sourceUrl} target="_blank" rel="noreferrer">
                       {source.downloadUrl ? '下载/打开官方文件' : '打开官方来源'}
                     </a>
+                    <button type="button" onClick={() => (documentReady ? unmarkDocumentReady(source.id) : markDocumentReady(source.id))}>
+                      {documentReady ? '取消全文标记' : '标记本地已有'}
+                    </button>
                   </div>
                 </article>
               )
@@ -516,7 +621,7 @@ function App() {
           {project.buildings.length === 0 ? (
             <div className="empty-state">
               <strong>请先录入楼栋</strong>
-              <p>风险清单会根据楼栋功能、火灾危险性和已加载规范包生成。</p>
+              <p>风险清单会根据楼栋功能、火灾危险性和已加载规范索引生成。</p>
             </div>
           ) : (
             <div className="risk-list">
@@ -544,7 +649,7 @@ function App() {
                           ))}
                         </div>
                       ) : (
-                        <p className="hint-text">加载相关规范包后显示引用索引。</p>
+                        <p className="hint-text">加载相关规范索引后显示引用索引。</p>
                       )}
                     </div>
                   </article>
@@ -565,8 +670,8 @@ function App() {
 
           {loadedSources.length === 0 ? (
             <div className="empty-state">
-              <strong>规范包未加载</strong>
-              <p>点击“加载推荐规范包”后，这里会显示本项目该查的文件、章节和 PDF 页码。</p>
+              <strong>规范索引未加载</strong>
+              <p>点击“加载推荐索引包”后，这里会显示本项目该查的文件、章节和 PDF 页码。</p>
             </div>
           ) : (
             <div className="lookup-list">
@@ -652,7 +757,7 @@ function App() {
             </div>
             <div>
               <strong>来源</strong>
-              <p>{answer.sourceIds.filter((id) => loadedSourceIds.includes(id)).map(sourceTitle).join('、') || '尚未加载相关规范包'}</p>
+              <p>{answer.sourceIds.filter((id) => loadedSourceIds.includes(id)).map(sourceTitle).join('、') || '尚未加载相关规范索引'}</p>
             </div>
             {referencesFor(answer.referenceIds, loadedSourceIds).length > 0 ? (
               <div>
@@ -683,16 +788,36 @@ function App() {
             </div>
             <CheckCircle2 aria-hidden="true" />
           </div>
-          <div className="source-grid">
-            {loadedSources.map((source) => (
-              <article key={source.id} className="source-card loaded">
-                <div className="card-head"><MapPinned aria-hidden="true" /><span>{source.jurisdiction}</span></div>
-                <h3>{source.title}</h3>
-                <p>{source.notes}</p>
-                <a href={source.downloadUrl ?? source.sourceUrl} target="_blank" rel="noreferrer">打开官方来源</a>
-              </article>
-            ))}
-          </div>
+          {loadedSources.length === 0 ? (
+            <div className="empty-state">
+              <strong>还没有索引进入当前工作台</strong>
+              <p>在规范索引与本地资料库中加载推荐索引后，这里会汇总当前可用于回答的资料源。</p>
+            </div>
+          ) : (
+            <div className="source-grid">
+              {loadedSources.map((source) => {
+                const state = sourceState(sourceStatus, source.id)
+                return (
+                  <article key={source.id} className={`source-card loaded ${state.documentReady ? 'document-ready' : ''}`}>
+                    <div className="card-head"><MapPinned aria-hidden="true" /><span>{source.jurisdiction}</span></div>
+                    <h3>{source.title}</h3>
+                    <p>{source.notes}</p>
+                    <div className="tag-row">
+                      <span className="status-pill index-loaded">索引已加载</span>
+                      <span className={state.documentReady ? 'status-pill document-ready' : 'status-pill missing'}>
+                        {state.documentReady ? '全文已就绪' : '全文未下载'}
+                      </span>
+                    </div>
+                    <div className="library-path">
+                      <span>本地调用路径</span>
+                      <code>{sourceLibraryPath(source)}</code>
+                    </div>
+                    <a href={source.downloadUrl ?? source.sourceUrl} target="_blank" rel="noreferrer">打开官方来源</a>
+                  </article>
+                )
+              })}
+            </div>
+          )}
         </section>
       </section>
     </main>
