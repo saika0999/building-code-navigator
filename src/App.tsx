@@ -15,9 +15,7 @@ import { zhongshanIndustrialUpstairsCase } from './data/projectCases'
 import { sources } from './data/sources'
 import { answerProjectQuestion } from './lib/qaEngine'
 import { getFindingsForProject, getSourceIdsForProject, getUnknownsForProject } from './lib/ruleEngine'
-import type { BuildingAsset, FireHazard, GeneratedFinding } from './types/domain'
-
-const project = zhongshanIndustrialUpstairsCase
+import type { BuildingAsset, FireHazard, GeneratedFinding, ProjectCase } from './types/domain'
 
 const fireHazardLabels: Record<FireHazard, string> = {
   unknown: '待确认',
@@ -60,14 +58,15 @@ function sourceTitle(id: string) {
 }
 
 function App() {
+  const [project, setProject] = useState<ProjectCase>(() => structuredClone(zhongshanIndustrialUpstairsCase))
   const [query, setQuery] = useState('这个中山工业上楼项目有哪些前期风险？')
   const [selectedQuestion, setSelectedQuestion] = useState(query)
 
-  const findings = useMemo(() => getFindingsForProject(project), [])
-  const unknowns = useMemo(() => getUnknownsForProject(project), [])
-  const projectSourceIds = useMemo(() => getSourceIdsForProject(project), [])
+  const findings = useMemo(() => getFindingsForProject(project), [project])
+  const unknowns = useMemo(() => getUnknownsForProject(project), [project])
+  const projectSourceIds = useMemo(() => getSourceIdsForProject(project), [project])
   const matchedSources = sources.filter((source) => projectSourceIds.includes(source.id))
-  const answer = useMemo(() => answerProjectQuestion(project, selectedQuestion), [selectedQuestion])
+  const answer = useMemo(() => answerProjectQuestion(project, selectedQuestion), [project, selectedQuestion])
 
   const highRiskCount = findings.filter((finding) => finding.severity === 'high').length
   const publicUseCount = project.buildings.filter((building) => building.hasPublicAccess).length
@@ -83,6 +82,28 @@ function App() {
     '中山项目建筑灰空间面积怎么计算？',
     '甲类仓库和配电房之间间距多少？',
   ]
+
+  function updateSiteCondition<Key extends keyof ProjectCase['siteConditions']>(
+    key: Key,
+    value: ProjectCase['siteConditions'][Key],
+  ) {
+    setProject((current) => ({
+      ...current,
+      siteConditions: {
+        ...current.siteConditions,
+        [key]: value,
+      },
+    }))
+  }
+
+  function updateBuildingFireHazard(buildingId: string, fireHazard: FireHazard) {
+    setProject((current) => ({
+      ...current,
+      buildings: current.buildings.map((building) =>
+        building.id === buildingId ? { ...building, fireHazard } : building,
+      ),
+    }))
+  }
 
   return (
     <main className="app-shell">
@@ -157,9 +178,76 @@ function App() {
           <div className="section-title">
             <div>
               <p className="eyebrow">Project Composition</p>
-              <h2>项目组成与已知未知项</h2>
+              <h2>项目条件快调</h2>
             </div>
             <ShieldCheck aria-hidden="true" />
+          </div>
+
+          <div className="condition-grid">
+            <label className="check-toggle">
+              <input
+                type="checkbox"
+                checked={project.siteConditions.hasIndependentWarehouse}
+                onChange={(event) => updateSiteCondition('hasIndependentWarehouse', event.target.checked)}
+              />
+              <span>存在独立仓库/中间仓库</span>
+            </label>
+            <label>
+              <span>仓储火灾危险性</span>
+              <select
+                value={project.siteConditions.warehouseFireHazard}
+                onChange={(event) => updateSiteCondition('warehouseFireHazard', event.target.value as FireHazard)}
+              >
+                <option value="unknown">待确认</option>
+                <option value="class_a">甲类</option>
+                <option value="class_b">乙类</option>
+                <option value="class_c">丙类</option>
+                <option value="class_d">丁类</option>
+                <option value="class_e">戊类</option>
+              </select>
+            </label>
+            <label className="check-toggle">
+              <input
+                type="checkbox"
+                checked={project.siteConditions.hasSubstation}
+                onChange={(event) => updateSiteCondition('hasSubstation', event.target.checked)}
+              />
+              <span>有配电房/变配电设施</span>
+            </label>
+            <label className="check-toggle">
+              <input
+                type="checkbox"
+                checked={project.siteConditions.hasGraySpace}
+                onChange={(event) => updateSiteCondition('hasGraySpace', event.target.checked)}
+              />
+              <span>涉及灰空间/架空/连廊</span>
+            </label>
+            <label className="check-toggle">
+              <input
+                type="checkbox"
+                checked={project.siteConditions.exhibitionOpenToPublic}
+                onChange={(event) => updateSiteCondition('exhibitionOpenToPublic', event.target.checked)}
+              />
+              <span>展厅可能对外开放</span>
+            </label>
+            <label className="check-toggle">
+              <input
+                type="checkbox"
+                checked={project.siteConditions.industrialUpstairsPolicyKnown}
+                onChange={(event) => updateSiteCondition('industrialUpstairsPolicyKnown', event.target.checked)}
+              />
+              <span>已确认中山工业上楼专项口径</span>
+            </label>
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="section-title">
+            <div>
+              <p className="eyebrow">Building Register</p>
+              <h2>项目组成与单体条件</h2>
+            </div>
+            <Building2 aria-hidden="true" />
           </div>
 
           <div className="building-grid">
@@ -178,6 +266,22 @@ function App() {
                 <p>
                   火灾危险性：<strong>{fireHazardLabels[building.fireHazard]}</strong>
                 </p>
+                {building.uses.includes('factory') ? (
+                  <label>
+                    <span>厂房火灾危险性</span>
+                    <select
+                      value={building.fireHazard}
+                      onChange={(event) => updateBuildingFireHazard(building.id, event.target.value as FireHazard)}
+                    >
+                      <option value="unknown">待确认</option>
+                      <option value="class_a">甲类</option>
+                      <option value="class_b">乙类</option>
+                      <option value="class_c">丙类</option>
+                      <option value="class_d">丁类</option>
+                      <option value="class_e">戊类</option>
+                    </select>
+                  </label>
+                ) : null}
                 <ul>
                   {building.knownUnknowns.slice(0, 4).map((item) => (
                     <li key={item}>{item}</li>
@@ -220,6 +324,28 @@ function App() {
                     ))}
                   </ul>
                 </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="section-title">
+            <div>
+              <p className="eyebrow">Lookup Package</p>
+              <h2>按主题生成的查阅路径</h2>
+            </div>
+            <BookOpen aria-hidden="true" />
+          </div>
+
+          <div className="lookup-list">
+            {findings.map((finding) => (
+              <article key={`lookup-${finding.id}`}>
+                <div>
+                  <span>{categoryLabels[finding.category]}</span>
+                  <strong>{finding.title}</strong>
+                </div>
+                <p>{finding.sourceIds.map(sourceTitle).join('、')}</p>
               </article>
             ))}
           </div>

@@ -2,6 +2,21 @@ import type { GeneratedFinding } from '../types/domain'
 
 export const requirementTopics: GeneratedFinding[] = [
   {
+    id: 'warehouse-substation-fire-distance',
+    title: '危险性仓储与配电房/变配电设施关系需要专项校核',
+    severity: 'high',
+    category: 'fire',
+    appliesTo: ['项目整体', '仓储功能', '配电房/变配电设施'],
+    why: '如果项目存在甲类、乙类仓库或甲乙类中间仓库，同时存在独立配电房或变配电设施，防火间距、防火分隔、是否允许贴邻或附设会成为总平面和单体布置的前置控制项。',
+    checks: [
+      '确认仓库是独立仓库、中间仓库还是厂房内局部储存。',
+      '确认储存物品火灾危险性、最大储量、耐火等级和防火分区。',
+      '确认配电房/变配电设施是否独立建筑、电压等级、服务范围和防火分隔条件。',
+      '按现行消防规范核对防火间距、防火墙替代条件以及不得布置情形。',
+    ],
+    sourceIds: ['gb-55037-2022', 'gb-50016-2014-2018'],
+  },
+  {
     id: 'zs-industrial-upstairs-local-policy',
     title: '中山工业上楼专项口径待确认',
     severity: 'high',

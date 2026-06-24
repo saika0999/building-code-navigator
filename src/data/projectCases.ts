@@ -13,6 +13,14 @@ export const zhongshanIndustrialUpstairsCase: ProjectCase = {
     '四栋厂房暂按工业上楼/多层厂房处理，具体生产火灾危险性类别待工艺专业确认。',
     '总部、宿舍、食堂、展厅均不是厂房功能，应与工业生产、仓储分别建立消防和规划审查路径。',
   ],
+  siteConditions: {
+    hasIndependentWarehouse: false,
+    warehouseFireHazard: 'unknown',
+    hasSubstation: true,
+    hasGraySpace: true,
+    exhibitionOpenToPublic: true,
+    industrialUpstairsPolicyKnown: false,
+  },
   buildings: [
     {
       id: 'factory-1',

@@ -9,19 +9,62 @@ export function answerProjectQuestion(project: ProjectCase, rawQuestion: string)
   const question = rawQuestion.trim()
   const findings = getFindingsForProject(project)
 
-  if (includesAny(question, ['甲类', '仓库', '配电房', '变配电', '间距'])) {
-    const factoryNames = project.buildings
-      .filter((building) => building.hasProduction || building.hasStorage)
-      .map((building) => building.name)
+  if (includesAny(question, ['前期风险', '风险清单', '有哪些风险', '提示需求'])) {
+    const highFindings = findings.filter((finding) => finding.severity === 'high')
+
+    return {
+      question,
+      conclusion: `当前中山工业上楼样例项目已触发 ${findings.length} 个主要提示，其中 ${highFindings.length} 个为高风险。高风险集中在中山工业上楼地方口径、混合功能消防路径、厂房火灾危险性、宿舍食堂、以及仓储/配电房关系等主题。`,
+      appliesTo: ['项目整体', '四栋厂房', '总部大楼', '宿舍楼（底层食堂）', '展厅'],
+      assumptions: project.assumptions,
+      nextChecks: findings.slice(0, 6).map((finding) => finding.title),
+      sourceIds: Array.from(new Set(findings.flatMap((finding) => finding.sourceIds))).slice(0, 6),
+      uncertainty: '风险清单会随项目条件快调变化。若把厂房火灾类别、仓储、配电房、展厅开放状态等条件补齐，系统会收敛提示范围。',
+    }
+  }
+
+  if (includesAny(question, ['厂房', '火灾危险性', '火灾类别', '四栋厂房'])) {
+    const factories = project.buildings.filter((building) => building.uses.includes('factory'))
+    const unknownFactories = factories.filter((building) => building.fireHazard === 'unknown')
 
     return {
       question,
       conclusion:
-        '不能在当前条件下直接给出一个固定间距。对这个中山项目，应先确认是否真的存在甲类仓库、甲类中间仓库或甲类生产工艺，再确认配电房是独立建筑、附设用房还是厂房内配套设备用房。确认后再按消防规范的防火间距、防火分隔和变配电设施条款校核。',
-      appliesTo: factoryNames.length > 0 ? factoryNames : ['项目整体'],
+        unknownFactories.length > 0
+          ? `当前仍有 ${unknownFactories.length} 栋厂房火灾危险性类别待确认。该条件会影响防火分区、安全疏散、耐火等级、防火间距、是否允许上楼以及是否允许与仓储/配套功能混合布置。`
+          : '当前四栋厂房均已录入火灾危险性类别，系统可继续按每栋厂房类别收敛防火分区、疏散、耐火等级和防火间距提示。',
+      appliesTo: factories.map((building) => building.name),
+      assumptions: factories.map((building) => `${building.name}：${building.fireHazard === 'unknown' ? '火灾危险性待确认' : building.fireHazard}`),
+      nextChecks: [
+        '要求甲方提供生产工艺、原辅料、成品、包装材料、储量和危险化学品清单。',
+        '由工艺、消防、安全专业共同判定每栋或每个防火分区的火灾危险性类别。',
+        '如果存在甲乙类生产或仓储，优先判断是否允许进入工业上楼建筑。',
+      ],
+      sourceIds: ['gb-55037-2022', 'gb-50016-2014-2018'],
+      uncertainty: '没有工艺和储存物品清单时，不能替代专业判定火灾危险性类别。',
+    }
+  }
+
+  if (includesAny(question, ['甲类', '仓库', '配电房', '变配电', '间距'])) {
+    const factoryNames = project.buildings
+      .filter((building) => building.hasProduction || building.hasStorage)
+      .map((building) => building.name)
+    const warehouseLabel =
+      project.siteConditions.hasIndependentWarehouse && project.siteConditions.warehouseFireHazard !== 'unknown'
+        ? `${project.siteConditions.warehouseFireHazard === 'class_a' ? '甲类' : project.siteConditions.warehouseFireHazard === 'class_b' ? '乙类' : '非甲乙类'}仓储`
+        : '仓储类别待确认'
+
+    return {
+      question,
+      conclusion:
+        project.siteConditions.hasIndependentWarehouse && project.siteConditions.hasSubstation
+          ? `当前项目条件显示存在${warehouseLabel}和配电房/变配电设施，因此已触发“仓储与配电房关系”专项校核。现阶段仍不能直接给固定间距，因为还缺少仓库规模、储量、耐火等级、配电房性质和总平面相对位置。`
+          : '当前项目尚未同时确认“独立仓库/中间仓库”和“配电房/变配电设施”，不能直接套用甲类仓库与配电房间距问题。应先补齐是否存在甲类仓储、配电房性质和总平面关系。',
+      appliesTo: project.siteConditions.hasIndependentWarehouse ? ['仓储功能', '配电房/变配电设施'] : factoryNames.length > 0 ? factoryNames : ['项目整体'],
       assumptions: [
-        '当前样例项目四栋厂房的火灾危险性类别仍为未知。',
-        '项目尚未录入独立仓库或独立配电房单体。',
+        `独立仓库/中间仓库：${project.siteConditions.hasIndependentWarehouse ? '已勾选' : '未确认'}`,
+        `仓储火灾危险性：${warehouseLabel}`,
+        `配电房/变配电设施：${project.siteConditions.hasSubstation ? '已勾选' : '未确认'}`,
         '如果只是厂房内普通配电间，判断路径不同于独立变配电站与甲类仓库之间的总平面间距。',
       ],
       nextChecks: [
@@ -30,7 +73,7 @@ export function answerProjectQuestion(project: ProjectCase, rawQuestion: string)
         '按 GB 55037、GB 50016 复核防火间距、防火墙替代条件和不允许布置情形。',
       ],
       sourceIds: ['gb-55037-2022', 'gb-50016-2014-2018'],
-      uncertainty: '缺少火灾危险性类别、仓库规模、配电房性质和总平面关系，不能输出确定数值。',
+      uncertainty: '缺少仓库规模、储量、耐火等级、配电房性质和总平面关系，不能输出确定数值。',
     }
   }
 

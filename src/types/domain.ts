@@ -67,6 +67,14 @@ export interface ProjectCase {
   stage: 'pre_design' | 'concept' | 'scheme'
   description: string
   assumptions: string[]
+  siteConditions: {
+    hasIndependentWarehouse: boolean
+    warehouseFireHazard: FireHazard
+    hasSubstation: boolean
+    hasGraySpace: boolean
+    exhibitionOpenToPublic: boolean
+    industrialUpstairsPolicyKnown: boolean
+  }
   buildings: BuildingAsset[]
 }
 
