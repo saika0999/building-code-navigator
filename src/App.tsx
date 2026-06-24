@@ -164,6 +164,8 @@ function referencesFor(ids: string[] = [], loadedSourceIds: string[]) {
 type LocalSourceState = {
   indexLoaded: boolean
   documentReady: boolean
+  localPath?: string
+  downloadedAt?: string
 }
 
 type LocalSourceStatus = Record<string, LocalSourceState>
@@ -203,6 +205,13 @@ function sourceLibraryPath(source: SourceManifest) {
   return `local-library/documents/${region}/${fileName}.pdf`
 }
 
+type SourceDownloadResult = {
+  sourceId: string
+  relativePath: string
+  bytes: number
+  savedAt: string
+}
+
 function App() {
   const [project, setProject] = useState<ProjectCase>(() => structuredClone(emptyProject))
   const [buildingType, setBuildingType] = useState(buildingTemplates[0].label)
@@ -211,6 +220,8 @@ function App() {
   const [query, setQuery] = useState('这个项目有哪些前期风险？')
   const [selectedQuestion, setSelectedQuestion] = useState(query)
   const [sourceStatus, setSourceStatus] = useState<LocalSourceStatus>(() => readStoredSourceStatus())
+  const [downloadMessages, setDownloadMessages] = useState<Record<string, string>>({})
+  const [downloadingSourceId, setDownloadingSourceId] = useState<string | null>(null)
 
   const findings = useMemo(() => getFindingsForProject(project), [project])
   const unknowns = useMemo(() => getUnknownsForProject(project), [project])
@@ -268,6 +279,49 @@ function App() {
       saveSourceStatus(next)
       return next
     })
+  }
+
+  async function downloadSourceToLibrary(source: SourceManifest) {
+    if (!source.downloadUrl) {
+      setDownloadMessages((current) => ({ ...current, [source.id]: '这份资料源还没有配置直接官方下载链接，只能先打开官方来源。' }))
+      return
+    }
+
+    setDownloadingSourceId(source.id)
+    setDownloadMessages((current) => ({ ...current, [source.id]: '正在下载到本地资料库...' }))
+
+    try {
+      const response = await fetch('/api/source-library/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceId: source.id }),
+      })
+      const result = await response.json() as Partial<SourceDownloadResult> & { error?: string }
+
+      if (!response.ok) {
+        throw new Error(result.error ?? '本地下载失败')
+      }
+
+      updateSourceState(source.id, {
+        indexLoaded: true,
+        documentReady: true,
+        localPath: result.relativePath,
+        downloadedAt: result.savedAt,
+      })
+      setDownloadMessages((current) => ({
+        ...current,
+        [source.id]: `已保存到 ${result.relativePath}，大小 ${Math.round((result.bytes ?? 0) / 1024)} KB。`,
+      }))
+    } catch (error) {
+      setDownloadMessages((current) => ({
+        ...current,
+        [source.id]: error instanceof Error
+          ? `下载失败：${error.message}。请确认正在用 pnpm dev 运行本地服务，并且官方链接可访问。`
+          : '下载失败：未知错误。',
+      }))
+    } finally {
+      setDownloadingSourceId(null)
+    }
   }
 
   function addBuilding() {
@@ -564,8 +618,8 @@ function App() {
           <div className="library-note">
             <strong>下载位置与调用方式</strong>
             <p>
-              当前网页预览不能静默写入电脑固定文件夹。项目约定的本地资料库是 <code>local-library/documents/城市或层级/规范编号.pdf</code>；
-              下一步接入本地下载器后，“一键下载”会把官方文件保存到这个目录，问答/RAG 再从已标记为“全文已就绪”的文件读取全文。现在可以先打开官方文件并手动标记本地已有。
+              本机通过 <code>pnpm dev</code> 运行时，“一键下载到资料库”会由本地服务把官方文件保存到 <code>local-library/documents/城市或层级/规范编号.pdf</code>。
+              线上 GitHub Pages 不能写入你的电脑，只保留索引和官方入口；后续问答/RAG 会优先读取已标记为“全文已就绪”的本地文件。
             </p>
           </div>
 
@@ -590,12 +644,23 @@ function App() {
                   </div>
                   <div className="library-path">
                     <span>本地调用路径</span>
-                    <code>{sourceLibraryPath(source)}</code>
+                    <code>{state.localPath ?? sourceLibraryPath(source)}</code>
                   </div>
                   <div className="source-actions">
                     <button type="button" onClick={() => (loaded ? unloadSource(source.id) : loadSource(source.id))}>
                       {loaded ? '卸载索引' : '加载索引'}
                     </button>
+                    {source.downloadUrl ? (
+                      <button
+                        type="button"
+                        disabled={downloadingSourceId === source.id}
+                        onClick={() => void downloadSourceToLibrary(source)}
+                      >
+                        {downloadingSourceId === source.id ? '下载中...' : '一键下载到资料库'}
+                      </button>
+                    ) : (
+                      <span className="download-unavailable">暂无直链</span>
+                    )}
                     <a href={source.downloadUrl ?? source.sourceUrl} target="_blank" rel="noreferrer">
                       {source.downloadUrl ? '下载/打开官方文件' : '打开官方来源'}
                     </a>
@@ -603,6 +668,7 @@ function App() {
                       {documentReady ? '取消全文标记' : '标记本地已有'}
                     </button>
                   </div>
+                  {downloadMessages[source.id] ? <p className="download-message">{downloadMessages[source.id]}</p> : null}
                 </article>
               )
             })}
@@ -810,8 +876,9 @@ function App() {
                     </div>
                     <div className="library-path">
                       <span>本地调用路径</span>
-                      <code>{sourceLibraryPath(source)}</code>
+                      <code>{state.localPath ?? sourceLibraryPath(source)}</code>
                     </div>
+                    {state.downloadedAt ? <p className="download-message">最近下载：{new Date(state.downloadedAt).toLocaleString()}</p> : null}
                     <a href={source.downloadUrl ?? source.sourceUrl} target="_blank" rel="noreferrer">打开官方来源</a>
                   </article>
                 )

@@ -337,6 +337,11 @@ input {
   color: #273c37;
 }
 
+.source-actions button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
 .source-actions {
   display: flex;
   flex-wrap: wrap;
@@ -348,6 +353,19 @@ input {
   display: inline-flex;
   align-items: center;
   min-height: 38px;
+}
+
+.download-unavailable {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid #e1e5df;
+  border-radius: 8px;
+  background: #f6f7f4;
+  color: #6b756f;
+  font-size: 13px;
+  font-weight: 750;
 }
 
 .add-building-row {
@@ -588,6 +606,16 @@ input {
   overflow-wrap: anywhere;
   color: #172522;
   font-size: 12px;
+}
+
+.download-message {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #eef4f8;
+  color: #344b5c;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .source-card a {
