@@ -2,6 +2,9 @@
 
 面向中国建筑设计前期工作的规范查阅与风险预警工具。第一版聚焦深圳市、中山市工业建筑项目，帮助建筑师在方案早期完成项目条件梳理、适用规范索引、风险清单和带来源的规范问答。
 
+- GitHub 仓库：https://github.com/saika0999/building-code-navigator
+- 在线预览：https://saika0999.github.io/building-code-navigator/
+
 ## 第一版能力
 
 - 项目条件问诊：地区、工业建筑类型、火灾危险性类别、仓储、配电房、高层、地下室、任务书完整度。
