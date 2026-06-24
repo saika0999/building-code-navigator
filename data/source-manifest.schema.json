@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://building-code-navigator.local/source-manifest.schema.json",
+  "title": "Building Code Source Manifest",
+  "type": "object",
+  "required": ["id", "title", "jurisdiction", "authority", "sourceUrl", "access", "redistribution", "topics", "reviewStatus"],
+  "properties": {
+    "id": { "type": "string" },
+    "title": { "type": "string" },
+    "code": { "type": "string" },
+    "jurisdiction": { "type": "string" },
+    "authority": { "type": "string" },
+    "sourceUrl": { "type": "string", "format": "uri" },
+    "downloadUrl": { "type": "string", "format": "uri" },
+    "access": {
+      "type": "string",
+      "enum": ["downloadable", "online_reading", "metadata_only", "restricted"]
+    },
+    "redistribution": {
+      "type": "string",
+      "enum": ["allowed", "metadata_only", "local_only", "unknown"]
+    },
+    "topics": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "projectTypes": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "effectiveDate": { "type": "string" },
+    "reviewStatus": {
+      "type": "string",
+      "enum": ["seed", "needs_verification", "verified"]
+    },
+    "notes": { "type": "string" }
+  }
+}

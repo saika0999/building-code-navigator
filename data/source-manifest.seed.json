@@ -1,0 +1,44 @@
+[
+  {
+    "id": "gb-55037-2022",
+    "title": "建筑防火通用规范",
+    "code": "GB 55037-2022",
+    "jurisdiction": "全国",
+    "authority": "住房和城乡建设部",
+    "sourceUrl": "https://www.mohurd.gov.cn/",
+    "access": "metadata_only",
+    "redistribution": "metadata_only",
+    "topics": ["消防", "建筑分类", "防火间距", "疏散", "工业建筑"],
+    "projectTypes": ["factory", "warehouse", "rd-factory", "industrial-upstairs", "mixed-industrial"],
+    "effectiveDate": "2023-06-01",
+    "reviewStatus": "needs_verification",
+    "notes": "强制性工程建设规范。第一版仅记录元数据和索引。"
+  },
+  {
+    "id": "shenzhen-industrial-upstairs-design-general-rules",
+    "title": "深圳市工业上楼项目建筑设计通则",
+    "jurisdiction": "深圳市",
+    "authority": "深圳市住房和建设局等",
+    "sourceUrl": "https://zjj.sz.gov.cn/",
+    "access": "metadata_only",
+    "redistribution": "metadata_only",
+    "topics": ["工业上楼", "产业用房", "货运流线", "垂直交通", "层高荷载", "消防"],
+    "projectTypes": ["industrial-upstairs", "mixed-industrial", "rd-factory"],
+    "reviewStatus": "needs_verification",
+    "notes": "深圳工业上楼专题核心资料源。"
+  },
+  {
+    "id": "zhongshan-planning-technical-standards-2023",
+    "title": "中山市国土空间规划技术标准与准则",
+    "jurisdiction": "中山市",
+    "authority": "中山市自然资源局",
+    "sourceUrl": "https://www.zs.gov.cn/",
+    "access": "metadata_only",
+    "redistribution": "metadata_only",
+    "topics": ["规划条件", "建筑间距", "停车配建", "建筑面积", "工业用地"],
+    "projectTypes": ["factory", "warehouse", "rd-factory", "mixed-industrial"],
+    "effectiveDate": "2023",
+    "reviewStatus": "needs_verification",
+    "notes": "用于中山项目前期规划条件和建筑指标梳理。"
+  }
+]
