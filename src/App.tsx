@@ -210,6 +210,7 @@ type SourceDownloadResult = {
   relativePath: string
   bytes: number
   savedAt: string
+  kind: 'official_attachment' | 'page_snapshot'
 }
 
 function App() {
@@ -282,13 +283,8 @@ function App() {
   }
 
   async function downloadSourceToLibrary(source: SourceManifest) {
-    if (!source.downloadUrl) {
-      setDownloadMessages((current) => ({ ...current, [source.id]: '这份资料源还没有配置直接官方下载链接，只能先打开官方来源。' }))
-      return
-    }
-
     setDownloadingSourceId(source.id)
-    setDownloadMessages((current) => ({ ...current, [source.id]: '正在下载到本地资料库...' }))
+    setDownloadMessages((current) => ({ ...current, [source.id]: '正在从官方来源获取到本地资料库...' }))
 
     try {
       const response = await fetch('/api/source-library/download', {
@@ -310,7 +306,7 @@ function App() {
       })
       setDownloadMessages((current) => ({
         ...current,
-        [source.id]: `已保存到 ${result.relativePath}，大小 ${Math.round((result.bytes ?? 0) / 1024)} KB。`,
+        [source.id]: `${result.kind === 'page_snapshot' ? '已保存官方页面正文快照' : '已下载官方附件'}：${result.relativePath}，大小 ${Math.round((result.bytes ?? 0) / 1024)} KB。`,
       }))
     } catch (error) {
       setDownloadMessages((current) => ({
@@ -618,8 +614,8 @@ function App() {
           <div className="library-note">
             <strong>下载位置与调用方式</strong>
             <p>
-              本机通过 <code>pnpm dev</code> 运行时，“一键下载到资料库”会由本地服务把官方文件保存到 <code>local-library/documents/城市或层级/规范编号.pdf</code>。
-              线上 GitHub Pages 不能写入你的电脑，只保留索引和官方入口；后续问答/RAG 会优先读取已标记为“全文已就绪”的本地文件。
+              本机通过 <code>pnpm dev</code> 运行时，“获取到资料库”会优先下载官方附件；如果官方页没有附件，就保存官方页面正文快照。
+              文件会进入 <code>local-library/documents/城市或层级/规范编号.pdf</code> 或 <code>.txt</code>。线上 GitHub Pages 不能写入你的电脑，只保留索引和官方入口。
             </p>
           </div>
 
@@ -650,17 +646,13 @@ function App() {
                     <button type="button" onClick={() => (loaded ? unloadSource(source.id) : loadSource(source.id))}>
                       {loaded ? '卸载索引' : '加载索引'}
                     </button>
-                    {source.downloadUrl ? (
-                      <button
-                        type="button"
-                        disabled={downloadingSourceId === source.id}
-                        onClick={() => void downloadSourceToLibrary(source)}
-                      >
-                        {downloadingSourceId === source.id ? '下载中...' : '一键下载到资料库'}
-                      </button>
-                    ) : (
-                      <span className="download-unavailable">暂无直链</span>
-                    )}
+                    <button
+                      type="button"
+                      disabled={downloadingSourceId === source.id}
+                      onClick={() => void downloadSourceToLibrary(source)}
+                    >
+                      {downloadingSourceId === source.id ? '获取中...' : '获取到资料库'}
+                    </button>
                     <a href={source.downloadUrl ?? source.sourceUrl} target="_blank" rel="noreferrer">
                       {source.downloadUrl ? '下载/打开官方文件' : '打开官方来源'}
                     </a>

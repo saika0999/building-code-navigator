@@ -36,7 +36,7 @@ export const sources: SourceManifest[] = [
     code: 'GB 55031-2022',
     jurisdiction: '全国',
     authority: '住房和城乡建设部',
-    sourceUrl: 'https://www.mohurd.gov.cn/',
+    sourceUrl: 'https://www.mohurd.gov.cn/gongkai/zc/wjk/art/2022/art_17339_767703.html',
     access: 'metadata_only',
     redistribution: 'metadata_only',
     topics: ['民用建筑', '办公', '宿舍', '食堂', '展览', '建筑设计'],
