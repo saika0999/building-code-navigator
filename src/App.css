@@ -101,6 +101,14 @@
   font-weight: 760;
 }
 
+.lead {
+  max-width: 780px;
+  margin: 10px 0 0;
+  color: #53635f;
+  font-size: 16px;
+  line-height: 1.7;
+}
+
 .status-stack {
   display: grid;
   gap: 8px;
@@ -297,13 +305,15 @@ input {
   height: 19px;
 }
 
-.source-grid {
+.source-grid,
+.building-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
 }
 
-.source-card {
+.source-card,
+.building-card {
   min-height: 220px;
   padding: 16px;
   border: 1px solid #dce2da;
@@ -327,12 +337,31 @@ input {
 }
 
 .source-card h3,
+.building-card h3,
 .risk-item h3,
 .answer-box h3 {
   margin: 10px 0 0;
   color: #14211f;
   font-size: 17px;
   line-height: 1.35;
+}
+
+.building-card p {
+  margin: 10px 0;
+  color: #596864;
+  font-size: 14px;
+}
+
+.building-card p strong {
+  color: #172522;
+}
+
+.building-card ul {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: #40504c;
+  font-size: 14px;
+  line-height: 1.65;
 }
 
 .tag-row {
@@ -391,6 +420,12 @@ input {
   text-transform: uppercase;
 }
 
+.risk-item strong {
+  display: block;
+  margin: 2px 0 8px;
+  color: #172522;
+}
+
 .risk-item ul,
 .answer-box ul {
   margin: 0;
@@ -402,6 +437,28 @@ input {
 
 .qa-panel {
   margin-bottom: 24px;
+}
+
+.quick-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.quick-row button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid #cfd7ce;
+  border-radius: 8px;
+  background: #f7f8f5;
+  color: #273c37;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.quick-row button:hover {
+  background: #e8eee7;
 }
 
 .query-box {
@@ -439,6 +496,37 @@ input {
   color: #63716d;
 }
 
+.unknown-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.unknown-grid div {
+  min-height: 86px;
+  padding: 12px;
+  border: 1px solid #e1e5df;
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.unknown-grid strong,
+.unknown-grid span {
+  display: block;
+}
+
+.unknown-grid strong {
+  color: #172522;
+  font-size: 14px;
+}
+
+.unknown-grid span {
+  margin-top: 6px;
+  color: #596864;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
 @media (max-width: 1100px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -454,7 +542,9 @@ input {
   }
 
   .form-grid,
-  .source-grid {
+  .source-grid,
+  .building-grid,
+  .unknown-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -476,6 +566,8 @@ input {
   .summary-band,
   .form-grid,
   .source-grid,
+  .building-grid,
+  .unknown-grid,
   .question-list,
   .query-box {
     grid-template-columns: 1fr;

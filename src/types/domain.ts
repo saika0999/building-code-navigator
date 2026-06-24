@@ -7,6 +7,19 @@ export type ProjectType =
   | 'industrial-upstairs'
   | 'mixed-industrial'
 
+export type BuildingUse =
+  | 'factory'
+  | 'warehouse'
+  | 'headquarters-office'
+  | 'dormitory'
+  | 'cafeteria'
+  | 'exhibition'
+  | 'substation'
+  | 'basement'
+  | 'parking'
+
+export type FireHazard = 'unknown' | 'class_a' | 'class_b' | 'class_c' | 'class_d' | 'class_e' | 'civil'
+
 export type SourceAccess =
   | 'downloadable'
   | 'online_reading'
@@ -27,6 +40,34 @@ export interface ProjectProfile {
   isHighRise: boolean
   hasBasement: boolean
   clientBriefQuality: 'unclear' | 'partial' | 'clear'
+}
+
+export interface BuildingAsset {
+  id: string
+  name: string
+  uses: BuildingUse[]
+  floors?: number
+  heightMeters?: number
+  grossAreaSqm?: number
+  fireHazard: FireHazard
+  hasPublicAccess?: boolean
+  hasCooking?: boolean
+  hasSleeping?: boolean
+  hasProduction?: boolean
+  hasStorage?: boolean
+  hasPowerEquipment?: boolean
+  knownUnknowns: string[]
+}
+
+export interface ProjectCase {
+  id: string
+  name: string
+  region: RegionId
+  projectType: ProjectType
+  stage: 'pre_design' | 'concept' | 'scheme'
+  description: string
+  assumptions: string[]
+  buildings: BuildingAsset[]
 }
 
 export interface SourceManifest {
@@ -58,6 +99,17 @@ export interface RiskItem {
   sourceIds: string[]
 }
 
+export interface GeneratedFinding {
+  id: string
+  title: string
+  severity: 'high' | 'medium' | 'low'
+  category: 'fire' | 'planning' | 'area' | 'operation' | 'documents'
+  appliesTo: string[]
+  why: string
+  checks: string[]
+  sourceIds: string[]
+}
+
 export interface IntakeQuestion {
   id: string
   label: string
@@ -70,6 +122,16 @@ export interface QaExample {
   question: string
   answer: string
   assumptions: string[]
+  sourceIds: string[]
+  uncertainty: string
+}
+
+export interface GroundedAnswer {
+  question: string
+  conclusion: string
+  appliesTo: string[]
+  assumptions: string[]
+  nextChecks: string[]
   sourceIds: string[]
   uncertainty: string
 }

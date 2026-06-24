@@ -2,125 +2,87 @@ import {
   AlertTriangle,
   BookOpen,
   Building2,
-  CheckCircle2,
   ClipboardList,
   Database,
-  Download,
   HelpCircle,
   MapPinned,
   Search,
+  ShieldCheck,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import './App.css'
-import { intakeQuestions } from './data/intake'
-import { qaExamples } from './data/qa'
-import { risks } from './data/risks'
+import { zhongshanIndustrialUpstairsCase } from './data/projectCases'
 import { sources } from './data/sources'
-import type { ProjectProfile, ProjectType, RegionId, RiskItem } from './types/domain'
+import { answerProjectQuestion } from './lib/qaEngine'
+import { getFindingsForProject, getSourceIdsForProject, getUnknownsForProject } from './lib/ruleEngine'
+import type { BuildingAsset, FireHazard, GeneratedFinding } from './types/domain'
 
-const initialProfile: ProjectProfile = {
-  region: 'shenzhen',
-  projectType: 'industrial-upstairs',
-  stage: 'pre_design',
-  fireHazard: 'unknown',
-  hasWarehouse: true,
-  hasSubstation: true,
-  isHighRise: false,
-  hasBasement: false,
-  clientBriefQuality: 'unclear',
-}
+const project = zhongshanIndustrialUpstairsCase
 
-const regionLabels: Record<RegionId, string> = {
-  shenzhen: '深圳市',
-  zhongshan: '中山市',
-}
-
-const projectTypeLabels: Record<ProjectType, string> = {
-  factory: '普通厂房',
-  warehouse: '仓库',
-  'rd-factory': '研发厂房',
-  'industrial-upstairs': '工业上楼',
-  'mixed-industrial': '混合工业项目',
-}
-
-const fireHazardLabels: Record<ProjectProfile['fireHazard'], string> = {
-  unknown: '未知，待确认',
+const fireHazardLabels: Record<FireHazard, string> = {
+  unknown: '待确认',
   class_a: '甲类',
   class_b: '乙类',
   class_c: '丙类',
-  class_d_e: '丁/戊类',
+  class_d: '丁类',
+  class_e: '戊类',
+  civil: '民用/公共功能',
 }
 
-const briefQualityLabels: Record<ProjectProfile['clientBriefQuality'], string> = {
-  unclear: '任务书不清楚',
-  partial: '部分条件明确',
-  clear: '条件较完整',
+const useLabels: Record<BuildingAsset['uses'][number], string> = {
+  factory: '厂房',
+  warehouse: '仓库',
+  'headquarters-office': '总部办公',
+  dormitory: '宿舍',
+  cafeteria: '食堂',
+  exhibition: '展厅',
+  substation: '配电房',
+  basement: '地下室',
+  parking: '停车',
 }
 
-function riskMatchesProfile(risk: RiskItem, profile: ProjectProfile) {
-  const regionMatch = risk.regions.includes(profile.region)
-  const typeMatch = risk.projectTypes.includes(profile.projectType)
-  const triggerMatch = risk.triggers.some((trigger) => {
-    const value = profile[trigger]
+const severityLabels: Record<GeneratedFinding['severity'], string> = {
+  high: '高风险',
+  medium: '中风险',
+  low: '低风险',
+}
 
-    if (trigger === 'fireHazard') {
-      return value === 'unknown' || value === 'class_a' || value === 'class_b'
-    }
+const categoryLabels: Record<GeneratedFinding['category'], string> = {
+  fire: '消防',
+  planning: '规划/产业',
+  area: '面积/指标',
+  operation: '运营/物流',
+  documents: '资料',
+}
 
-    if (trigger === 'clientBriefQuality') {
-      return value === 'unclear' || value === 'partial'
-    }
-
-    if (trigger === 'projectType' || trigger === 'region') {
-      return true
-    }
-
-    return Boolean(value)
-  })
-
-  return regionMatch && typeMatch && triggerMatch
+function sourceTitle(id: string) {
+  return sources.find((source) => source.id === id)?.title ?? id
 }
 
 function App() {
-  const [profile, setProfile] = useState<ProjectProfile>(initialProfile)
-  const [query, setQuery] = useState('甲类仓库和配电房之间间距多少？')
+  const [query, setQuery] = useState('这个中山工业上楼项目有哪些前期风险？')
+  const [selectedQuestion, setSelectedQuestion] = useState(query)
 
-  const matchedSources = useMemo(() => {
-    return sources.filter((source) => {
-      const jurisdictionMatch =
-        source.jurisdiction === '全国' ||
-        source.jurisdiction === '广东省' ||
-        source.jurisdiction === regionLabels[profile.region]
+  const findings = useMemo(() => getFindingsForProject(project), [])
+  const unknowns = useMemo(() => getUnknownsForProject(project), [])
+  const projectSourceIds = useMemo(() => getSourceIdsForProject(project), [])
+  const matchedSources = sources.filter((source) => projectSourceIds.includes(source.id))
+  const answer = useMemo(() => answerProjectQuestion(project, selectedQuestion), [selectedQuestion])
 
-      return jurisdictionMatch && source.projectTypes.includes(profile.projectType)
-    })
-  }, [profile.projectType, profile.region])
+  const highRiskCount = findings.filter((finding) => finding.severity === 'high').length
+  const publicUseCount = project.buildings.filter((building) => building.hasPublicAccess).length
+  const unknownFactoryCount = project.buildings.filter(
+    (building) => building.uses.includes('factory') && building.fireHazard === 'unknown',
+  ).length
 
-  const matchedRisks = useMemo(() => {
-    return risks.filter((risk) => riskMatchesProfile(risk, profile))
-  }, [profile])
-
-  const matchedQa = useMemo(() => {
-    const normalizedQuery = query.trim()
-    const exact = qaExamples.find((item) => item.question === normalizedQuery)
-    if (exact) {
-      return exact
-    }
-
-    return qaExamples.find((item) =>
-      normalizedQuery
-        .split(/[，。？?\s]/)
-        .filter(Boolean)
-        .some((token) => item.question.includes(token) || item.answer.includes(token)),
-    )
-  }, [query])
-
-  const unknownCount = [
-    profile.fireHazard === 'unknown',
-    profile.clientBriefQuality !== 'clear',
-    profile.hasWarehouse && profile.fireHazard === 'unknown',
-    profile.projectType === 'industrial-upstairs' && profile.region !== 'shenzhen',
-  ].filter(Boolean).length
+  const quickQuestions = [
+    '这个中山工业上楼项目有哪些前期风险？',
+    '四栋厂房的火灾危险性没有确定会影响什么？',
+    '宿舍楼底层食堂要重点查什么？',
+    '展厅在工业项目里有什么风险？',
+    '中山项目建筑灰空间面积怎么计算？',
+    '甲类仓库和配电房之间间距多少？',
+  ]
 
   return (
     <main className="app-shell">
@@ -129,26 +91,26 @@ function App() {
           <Building2 aria-hidden="true" />
           <div>
             <span>建筑规范查阅页</span>
-            <strong>工业建筑工作台</strong>
+            <strong>中山工业上楼项目</strong>
           </div>
         </div>
 
         <nav className="nav-list" aria-label="工作区">
-          <a href="#intake">
+          <a href="#project">
             <ClipboardList aria-hidden="true" />
-            项目条件
-          </a>
-          <a href="#sources">
-            <Database aria-hidden="true" />
-            资料源
+            项目组成
           </a>
           <a href="#risks">
             <AlertTriangle aria-hidden="true" />
-            风险清单
+            风险提示
           </a>
           <a href="#qa">
             <Search aria-hidden="true" />
             规范问答
+          </a>
+          <a href="#sources">
+            <Database aria-hidden="true" />
+            资料源
           </a>
         </nav>
       </aside>
@@ -156,164 +118,202 @@ function App() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <p className="eyebrow">深圳 / 中山 · 第一版 MVP</p>
-            <h1>把模糊任务书整理成可追溯的规范工作流</h1>
+            <p className="eyebrow">Zhongshan · Industrial Upstairs</p>
+            <h1>{project.name}</h1>
+            <p className="lead">{project.description}</p>
           </div>
           <div className="status-stack">
             <span>
-              <BookOpen aria-hidden="true" />
-              {matchedSources.length} 个资料源
+              <Building2 aria-hidden="true" />
+              {project.buildings.length} 栋/组建筑
             </span>
             <span>
               <AlertTriangle aria-hidden="true" />
-              {matchedRisks.length} 个触发风险
+              {highRiskCount} 个高风险
+            </span>
+            <span>
+              <HelpCircle aria-hidden="true" />
+              {unknowns.length} 个待确认项
             </span>
           </div>
         </header>
 
         <section className="summary-band">
           <div>
-            <span>当前项目</span>
-            <strong>
-              {regionLabels[profile.region]} · {projectTypeLabels[profile.projectType]}
-            </strong>
+            <span>项目阶段</span>
+            <strong>前期条件梳理</strong>
           </div>
           <div>
-            <span>火灾危险性</span>
-            <strong>{fireHazardLabels[profile.fireHazard]}</strong>
+            <span>公共/民用功能</span>
+            <strong>{publicUseCount} 个单体涉及</strong>
           </div>
           <div>
-            <span>待确认强度</span>
-            <strong>{unknownCount > 0 ? `${unknownCount} 项待确认` : '条件较完整'}</strong>
+            <span>厂房火灾类别</span>
+            <strong>{unknownFactoryCount} 栋待确认</strong>
           </div>
         </section>
 
-        <section id="intake" className="panel">
+        <section id="project" className="panel">
           <div className="section-title">
             <div>
-              <p className="eyebrow">Project Intake</p>
-              <h2>项目条件问诊</h2>
+              <p className="eyebrow">Project Composition</p>
+              <h2>项目组成与已知未知项</h2>
+            </div>
+            <ShieldCheck aria-hidden="true" />
+          </div>
+
+          <div className="building-grid">
+            {project.buildings.map((building) => (
+              <article key={building.id} className="building-card">
+                <div className="card-head">
+                  <Building2 aria-hidden="true" />
+                  <span>{building.floors ? `${building.floors} 层` : '层数待确认'}</span>
+                </div>
+                <h3>{building.name}</h3>
+                <div className="tag-row">
+                  {building.uses.map((use) => (
+                    <span key={use}>{useLabels[use]}</span>
+                  ))}
+                </div>
+                <p>
+                  火灾危险性：<strong>{fireHazardLabels[building.fireHazard]}</strong>
+                </p>
+                <ul>
+                  {building.knownUnknowns.slice(0, 4).map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section id="risks" className="panel">
+          <div className="section-title">
+            <div>
+              <p className="eyebrow">Generated Risk Register</p>
+              <h2>根据项目组成生成的提示</h2>
+            </div>
+            <AlertTriangle aria-hidden="true" />
+          </div>
+
+          <div className="risk-list">
+            {findings.map((finding) => (
+              <article key={finding.id} className={`risk-item ${finding.severity}`}>
+                <div>
+                  <span>
+                    {severityLabels[finding.severity]} · {categoryLabels[finding.category]}
+                  </span>
+                  <h3>{finding.title}</h3>
+                  <p>{finding.why}</p>
+                  <div className="tag-row">
+                    {finding.appliesTo.map((item) => (
+                      <span key={item}>{item}</span>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <strong>下一步核对</strong>
+                  <ul>
+                    {finding.checks.map((check) => (
+                      <li key={check}>{check}</li>
+                    ))}
+                  </ul>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="section-title">
+            <div>
+              <p className="eyebrow">Open Questions</p>
+              <h2>需要向甲方/主管部门确认的资料</h2>
             </div>
             <HelpCircle aria-hidden="true" />
           </div>
-
-          <div className="form-grid">
-            <label>
-              <span>项目所在城市</span>
-              <select
-                value={profile.region}
-                onChange={(event) =>
-                  setProfile((current) => ({ ...current, region: event.target.value as RegionId }))
-                }
-              >
-                <option value="shenzhen">深圳市</option>
-                <option value="zhongshan">中山市</option>
-              </select>
-            </label>
-
-            <label>
-              <span>工业建筑类型</span>
-              <select
-                value={profile.projectType}
-                onChange={(event) =>
-                  setProfile((current) => ({
-                    ...current,
-                    projectType: event.target.value as ProjectType,
-                  }))
-                }
-              >
-                {Object.entries(projectTypeLabels).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              <span>火灾危险性类别</span>
-              <select
-                value={profile.fireHazard}
-                onChange={(event) =>
-                  setProfile((current) => ({
-                    ...current,
-                    fireHazard: event.target.value as ProjectProfile['fireHazard'],
-                  }))
-                }
-              >
-                {Object.entries(fireHazardLabels).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              <span>任务书完整度</span>
-              <select
-                value={profile.clientBriefQuality}
-                onChange={(event) =>
-                  setProfile((current) => ({
-                    ...current,
-                    clientBriefQuality: event.target.value as ProjectProfile['clientBriefQuality'],
-                  }))
-                }
-              >
-                {Object.entries(briefQualityLabels).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <div className="toggle-row">
-            {[
-              ['hasWarehouse', '包含仓储功能'],
-              ['hasSubstation', '有配电房/变配电'],
-              ['isHighRise', '可能为高层工业建筑'],
-              ['hasBasement', '包含地下室'],
-            ].map(([field, label]) => (
-              <label key={field} className="check-toggle">
-                <input
-                  type="checkbox"
-                  checked={Boolean(profile[field as keyof ProjectProfile])}
-                  onChange={(event) =>
-                    setProfile((current) => ({
-                      ...current,
-                      [field]: event.target.checked,
-                    }))
-                  }
-                />
-                <span>{label}</span>
-              </label>
-            ))}
-          </div>
-
-          <div className="question-list">
-            {intakeQuestions.map((question) => (
-              <div key={question.id}>
-                <CheckCircle2 aria-hidden="true" />
-                <div>
-                  <strong>{question.label}</strong>
-                  <p>{question.helper}</p>
-                </div>
+          <div className="unknown-grid">
+            {unknowns.map((unknown) => (
+              <div key={`${unknown.buildingId}-${unknown.item}`}>
+                <strong>{unknown.buildingName}</strong>
+                <span>{unknown.item}</span>
               </div>
             ))}
           </div>
+        </section>
+
+        <section id="qa" className="panel qa-panel">
+          <div className="section-title">
+            <div>
+              <p className="eyebrow">Grounded QA</p>
+              <h2>带项目上下文的规范问答</h2>
+            </div>
+            <Search aria-hidden="true" />
+          </div>
+
+          <div className="quick-row">
+            {quickQuestions.map((question) => (
+              <button
+                type="button"
+                key={question}
+                onClick={() => {
+                  setQuery(question)
+                  setSelectedQuestion(question)
+                }}
+              >
+                {question}
+              </button>
+            ))}
+          </div>
+
+          <div className="query-box">
+            <input value={query} onChange={(event) => setQuery(event.target.value)} />
+            <button type="button" onClick={() => setSelectedQuestion(query)}>
+              回答
+            </button>
+          </div>
+
+          <article className="answer-box">
+            <h3>{answer.question}</h3>
+            <div>
+              <strong>结论</strong>
+              <p>{answer.conclusion}</p>
+            </div>
+            <div>
+              <strong>适用范围</strong>
+              <div className="tag-row">
+                {answer.appliesTo.map((item) => (
+                  <span key={item}>{item}</span>
+                ))}
+              </div>
+            </div>
+            <div>
+              <strong>下一步核对</strong>
+              <ul>
+                {answer.nextChecks.map((check) => (
+                  <li key={check}>{check}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <strong>来源</strong>
+              <p>{answer.sourceIds.map(sourceTitle).join('、')}</p>
+            </div>
+            <div>
+              <strong>不确定项</strong>
+              <p>{answer.uncertainty}</p>
+            </div>
+          </article>
         </section>
 
         <section id="sources" className="panel">
           <div className="section-title">
             <div>
               <p className="eyebrow">Source Manifest</p>
-              <h2>适用规范与政策资料源</h2>
+              <h2>本项目触发的资料源</h2>
             </div>
-            <button type="button" className="icon-button" title="未来接入一键同步资料源">
-              <Download aria-hidden="true" />
-            </button>
+            <BookOpen aria-hidden="true" />
           </div>
 
           <div className="source-grid">
@@ -336,82 +336,6 @@ function App() {
               </article>
             ))}
           </div>
-        </section>
-
-        <section id="risks" className="panel">
-          <div className="section-title">
-            <div>
-              <p className="eyebrow">Risk Register</p>
-              <h2>方案前期风险清单</h2>
-            </div>
-            <AlertTriangle aria-hidden="true" />
-          </div>
-
-          <div className="risk-list">
-            {matchedRisks.map((risk) => (
-              <article key={risk.id} className={`risk-item ${risk.severity}`}>
-                <div>
-                  <span>{risk.severity}</span>
-                  <h3>{risk.title}</h3>
-                  <p>{risk.description}</p>
-                </div>
-                <ul>
-                  {risk.actions.map((action) => (
-                    <li key={action}>{action}</li>
-                  ))}
-                </ul>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section id="qa" className="panel qa-panel">
-          <div className="section-title">
-            <div>
-              <p className="eyebrow">Grounded QA</p>
-              <h2>设计过程规范问答原型</h2>
-            </div>
-            <Search aria-hidden="true" />
-          </div>
-
-          <div className="query-box">
-            <input value={query} onChange={(event) => setQuery(event.target.value)} />
-            <button type="button" onClick={() => setQuery('建筑灰空间面积怎么计算？')}>
-              试问灰空间
-            </button>
-          </div>
-
-          {matchedQa ? (
-            <article className="answer-box">
-              <h3>{matchedQa.question}</h3>
-              <p>{matchedQa.answer}</p>
-              <div>
-                <strong>适用前提</strong>
-                <ul>
-                  {matchedQa.assumptions.map((assumption) => (
-                    <li key={assumption}>{assumption}</li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <strong>来源</strong>
-                <p>
-                  {matchedQa.sourceIds
-                    .map((id) => sources.find((source) => source.id === id)?.title ?? id)
-                    .join('、')}
-                </p>
-              </div>
-              <div>
-                <strong>不确定项</strong>
-                <p>{matchedQa.uncertainty}</p>
-              </div>
-            </article>
-          ) : (
-            <article className="answer-box muted">
-              <h3>还没有匹配到示例答案</h3>
-              <p>后续接入本地全文索引后，这里会调用规范资料库生成带条文来源的回答。</p>
-            </article>
-          )}
         </section>
       </section>
     </main>
