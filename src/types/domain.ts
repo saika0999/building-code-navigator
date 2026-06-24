@@ -95,6 +95,15 @@ export interface SourceManifest {
   notes: string
 }
 
+export interface SourceReference {
+  id: string
+  sourceId: string
+  label: string
+  pdfPages?: number[]
+  topics: string[]
+  summary: string
+}
+
 export interface RiskItem {
   id: string
   title: string
@@ -116,6 +125,7 @@ export interface GeneratedFinding {
   why: string
   checks: string[]
   sourceIds: string[]
+  referenceIds?: string[]
 }
 
 export interface IntakeQuestion {
@@ -141,5 +151,6 @@ export interface GroundedAnswer {
   assumptions: string[]
   nextChecks: string[]
   sourceIds: string[]
+  referenceIds?: string[]
   uncertainty: string
 }

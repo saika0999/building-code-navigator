@@ -19,6 +19,7 @@ export function answerProjectQuestion(project: ProjectCase, rawQuestion: string)
       assumptions: project.assumptions,
       nextChecks: findings.slice(0, 6).map((finding) => finding.title),
       sourceIds: Array.from(new Set(findings.flatMap((finding) => finding.sourceIds))).slice(0, 6),
+      referenceIds: Array.from(new Set(findings.flatMap((finding) => finding.referenceIds ?? []))).slice(0, 8),
       uncertainty: '风险清单会随项目条件快调变化。若把厂房火灾类别、仓储、配电房、展厅开放状态等条件补齐，系统会收敛提示范围。',
     }
   }
@@ -41,6 +42,7 @@ export function answerProjectQuestion(project: ProjectCase, rawQuestion: string)
         '如果存在甲乙类生产或仓储，优先判断是否允许进入工业上楼建筑。',
       ],
       sourceIds: ['gb-55037-2022', 'gb-50016-2014-2018'],
+      referenceIds: ['gb-fire-industrial-civil-path', 'zs-5-9-7-industrial-design', 'zs-4-2-3-industrial-intensity'],
       uncertainty: '没有工艺和储存物品清单时，不能替代专业判定火灾危险性类别。',
     }
   }
@@ -73,6 +75,7 @@ export function answerProjectQuestion(project: ProjectCase, rawQuestion: string)
         '按 GB 55037、GB 50016 复核防火间距、防火墙替代条件和不允许布置情形。',
       ],
       sourceIds: ['gb-55037-2022', 'gb-50016-2014-2018'],
+      referenceIds: ['gb-fire-warehouse-substation-path', 'zs-3-4-logistics-warehouse', 'zs-5-9-8-warehouse-design'],
       uncertainty: '缺少仓库规模、储量、耐火等级、配电房性质和总平面关系，不能输出确定数值。',
     }
   }
@@ -93,6 +96,7 @@ export function answerProjectQuestion(project: ProjectCase, rawQuestion: string)
         '按单体和功能建立面积台账，避免总部、宿舍、食堂、展厅挤占工业配套比例。',
       ],
       sourceIds: ['zhongshan-planning-technical-standards-2023', 'gbt-50353-2013'],
+      referenceIds: ['zs-3-6-3-compatible-use', 'zs-4-3-5-industrial-far', 'zs-7-4-2-parking'],
       uncertainty: '未明确空间类型和地方规划条件前，只能给出查阅路径和建表方法。',
     }
   }
@@ -110,6 +114,7 @@ export function answerProjectQuestion(project: ProjectCase, rawQuestion: string)
         '确认宿舍人数、疏散宽度和安全出口数量。',
       ],
       sourceIds: ['gb-55037-2022', 'gb-50016-2014-2018', 'gb-55031-2022'],
+      referenceIds: ['gb-fire-industrial-civil-path', 'zs-5-9-4-dormitory-design', 'zs-5-7-2-dormitory-spacing'],
       uncertainty: '需要食堂规模、厨房条件和宿舍人数后才能进入条文级校核。',
     }
   }
@@ -127,6 +132,7 @@ export function answerProjectQuestion(project: ProjectCase, rawQuestion: string)
         '确认展厅与厂房、总部、停车库的连通方式。',
       ],
       sourceIds: ['gb-55037-2022', 'gb-50016-2014-2018'],
+      referenceIds: ['gb-fire-industrial-civil-path', 'zs-5-9-6-commercial-exhibition', 'zs-7-4-2-parking'],
       uncertainty: '展厅使用模式和人数决定后，才能判断是否触发更严格公共建筑控制。',
     }
   }
@@ -144,6 +150,7 @@ export function answerProjectQuestion(project: ProjectCase, rawQuestion: string)
         '核对产业监管协议、分割转让、层高荷载和货运组织要求。',
       ],
       sourceIds: ['zhongshan-planning-technical-standards-2023', 'zhongshan-industrial-policy-entry'],
+      referenceIds: ['zs-3-3-1-industrial-layout', 'zs-3-3-2-service-facilities', 'zs-3-6-3-compatible-use', 'zs-4-2-3-industrial-intensity'],
       uncertainty: '尚未固化中山专门工业上楼设计导则，必须以当地主管部门和地块文件为准。',
     }
   }
@@ -156,6 +163,7 @@ export function answerProjectQuestion(project: ProjectCase, rawQuestion: string)
     assumptions: project.assumptions,
     nextChecks: findings.slice(0, 4).map((finding) => finding.title),
     sourceIds: Array.from(new Set(findings.flatMap((finding) => finding.sourceIds))).slice(0, 5),
+    referenceIds: Array.from(new Set(findings.flatMap((finding) => finding.referenceIds ?? []))).slice(0, 8),
     uncertainty: '需要补充问题主题或接入本地全文规范库后，才能生成更精确的条文级答案。',
   }
 }

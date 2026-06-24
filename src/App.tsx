@@ -12,6 +12,7 @@ import {
 import { useMemo, useState } from 'react'
 import './App.css'
 import { zhongshanIndustrialUpstairsCase } from './data/projectCases'
+import { sourceReferences } from './data/references'
 import { sources } from './data/sources'
 import { answerProjectQuestion } from './lib/qaEngine'
 import { getFindingsForProject, getSourceIdsForProject, getUnknownsForProject } from './lib/ruleEngine'
@@ -55,6 +56,12 @@ const categoryLabels: Record<GeneratedFinding['category'], string> = {
 
 function sourceTitle(id: string) {
   return sources.find((source) => source.id === id)?.title ?? id
+}
+
+function referencesFor(ids: string[] = []) {
+  return ids
+    .map((id) => sourceReferences.find((reference) => reference.id === id))
+    .filter((reference): reference is NonNullable<typeof reference> => Boolean(reference))
 }
 
 function App() {
@@ -323,6 +330,16 @@ function App() {
                       <li key={check}>{check}</li>
                     ))}
                   </ul>
+                  {referencesFor(finding.referenceIds).length > 0 ? (
+                    <div className="reference-stack compact">
+                      {referencesFor(finding.referenceIds).map((reference) => (
+                        <span key={reference.id}>
+                          {reference.label}
+                          {reference.pdfPages ? ` · PDF ${reference.pdfPages.join(', ')}` : ''}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               </article>
             ))}
@@ -346,6 +363,15 @@ function App() {
                   <strong>{finding.title}</strong>
                 </div>
                 <p>{finding.sourceIds.map(sourceTitle).join('、')}</p>
+                <div className="reference-stack">
+                  {referencesFor(finding.referenceIds).map((reference) => (
+                    <span key={reference.id}>
+                      <strong>{reference.label}</strong>
+                      {reference.pdfPages ? ` · PDF ${reference.pdfPages.join(', ')}` : ''}
+                      <small>{reference.summary}</small>
+                    </span>
+                  ))}
+                </div>
               </article>
             ))}
           </div>
@@ -426,6 +452,20 @@ function App() {
               <strong>来源</strong>
               <p>{answer.sourceIds.map(sourceTitle).join('、')}</p>
             </div>
+            {referencesFor(answer.referenceIds).length > 0 ? (
+              <div>
+                <strong>引用索引</strong>
+                <div className="reference-stack">
+                  {referencesFor(answer.referenceIds).map((reference) => (
+                    <span key={reference.id}>
+                      <strong>{reference.label}</strong>
+                      {reference.pdfPages ? ` · PDF ${reference.pdfPages.join(', ')}` : ''}
+                      <small>{reference.summary}</small>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div>
               <strong>不确定项</strong>
               <p>{answer.uncertainty}</p>

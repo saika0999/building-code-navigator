@@ -15,6 +15,7 @@ export const requirementTopics: GeneratedFinding[] = [
       '按现行消防规范核对防火间距、防火墙替代条件以及不得布置情形。',
     ],
     sourceIds: ['gb-55037-2022', 'gb-50016-2014-2018'],
+    referenceIds: ['gb-fire-warehouse-substation-path', 'zs-3-4-logistics-warehouse', 'zs-5-9-8-warehouse-design'],
   },
   {
     id: 'zs-industrial-upstairs-local-policy',
@@ -29,6 +30,12 @@ export const requirementTopics: GeneratedFinding[] = [
       '确认总部、宿舍、食堂、展厅是否计入产业配套及其比例限制。',
     ],
     sourceIds: ['zhongshan-planning-technical-standards-2023', 'zhongshan-industrial-policy-entry'],
+    referenceIds: [
+      'zs-3-3-1-industrial-layout',
+      'zs-3-3-2-service-facilities',
+      'zs-3-6-3-compatible-use',
+      'zs-4-2-3-industrial-intensity',
+    ],
   },
   {
     id: 'mixed-fire-systems',
@@ -43,6 +50,7 @@ export const requirementTopics: GeneratedFinding[] = [
       '确认食堂厨房、宿舍、展厅是否触发人员密集或公共建筑专项要求。',
     ],
     sourceIds: ['gb-55037-2022', 'gb-50016-2014-2018', 'gb-55031-2022'],
+    referenceIds: ['gb-fire-industrial-civil-path', 'zs-5-9-7-industrial-design', 'zs-5-9-4-dormitory-design', 'zs-5-9-6-commercial-exhibition'],
   },
   {
     id: 'factory-fire-hazard-unknown',
@@ -57,6 +65,7 @@ export const requirementTopics: GeneratedFinding[] = [
       '若存在甲乙类工艺或仓储，优先判断是否允许进入工业上楼建筑。',
     ],
     sourceIds: ['gb-55037-2022', 'gb-50016-2014-2018'],
+    referenceIds: ['gb-fire-industrial-civil-path', 'zs-5-9-7-industrial-design'],
   },
   {
     id: 'dormitory-cafeteria-separation',
@@ -71,6 +80,7 @@ export const requirementTopics: GeneratedFinding[] = [
       '核对食堂与宿舍是否需要独立疏散和防火分隔。',
     ],
     sourceIds: ['gb-55037-2022', 'gb-50016-2014-2018', 'gb-55031-2022'],
+    referenceIds: ['gb-fire-industrial-civil-path', 'zs-5-9-4-dormitory-design', 'zs-5-7-2-dormitory-spacing'],
   },
   {
     id: 'exhibition-public-access',
@@ -85,6 +95,7 @@ export const requirementTopics: GeneratedFinding[] = [
       '确认展厅与厂房、总部、地下车库之间的联系和防火分隔。',
     ],
     sourceIds: ['gb-55037-2022', 'gb-50016-2014-2018'],
+    referenceIds: ['gb-fire-industrial-civil-path', 'zs-5-9-6-commercial-exhibition', 'zs-7-4-2-parking'],
   },
   {
     id: 'area-calculation-and-quota',
@@ -99,6 +110,7 @@ export const requirementTopics: GeneratedFinding[] = [
       '按中山规划技术标准核对停车、建筑间距、退线、建筑高度和面积口径。',
     ],
     sourceIds: ['zhongshan-planning-technical-standards-2023', 'gbt-50353-2013'],
+    referenceIds: ['zs-3-6-3-compatible-use', 'zs-4-3-5-industrial-far', 'zs-7-4-2-parking'],
   },
   {
     id: 'logistics-and-vertical-transport',
@@ -113,5 +125,6 @@ export const requirementTopics: GeneratedFinding[] = [
       '同步核对消防车道、消防救援面、登高操作场地和厂房疏散出口。',
     ],
     sourceIds: ['gb-55037-2022', 'zhongshan-planning-technical-standards-2023'],
+    referenceIds: ['gb-fire-industrial-civil-path', 'zs-5-9-7-industrial-design', 'zs-5-9-8-warehouse-design', 'zs-7-4-2-parking'],
   },
 ]
