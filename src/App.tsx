@@ -168,6 +168,10 @@ type LocalSourceState = {
   downloadedAt?: string
   bytes?: number
   localFileKind?: 'official_attachment' | 'page_snapshot'
+  indexPath?: string
+  indexChars?: number
+  indexedAt?: string | null
+  searchable?: boolean
 }
 
 type LocalSourceStatus = Record<string, LocalSourceState>
@@ -223,13 +227,29 @@ type SourceFileStatus = {
   updatedAt: string | null
   extension: string | null
   kind: 'official_attachment' | 'page_snapshot' | null
+  indexExists: boolean
+  indexPath: string
+  indexUpdatedAt: string | null
+  indexChars: number
+  searchable: boolean
 }
 
 type SourceSearchResult = {
   sourceId: string
   title: string
   relativePath: string
+  kind: 'text_index' | 'page_snapshot'
   snippet: string
+}
+
+type SourceIndexResult = {
+  sourceId: string
+  indexPath: string
+  indexChars: number
+  pageCount: number | null
+  searchable: boolean
+  message: string
+  error?: string
 }
 
 function App() {
@@ -242,6 +262,8 @@ function App() {
   const [sourceStatus, setSourceStatus] = useState<LocalSourceStatus>(() => readStoredSourceStatus())
   const [downloadMessages, setDownloadMessages] = useState<Record<string, string>>({})
   const [downloadingSourceId, setDownloadingSourceId] = useState<string | null>(null)
+  const [indexingSourceId, setIndexingSourceId] = useState<string | null>(null)
+  const [indexMessages, setIndexMessages] = useState<Record<string, string>>({})
   const [libraryStatuses, setLibraryStatuses] = useState<Record<string, SourceFileStatus>>({})
   const [libraryMessage, setLibraryMessage] = useState('尚未扫描本地资料库')
   const [batchAcquiring, setBatchAcquiring] = useState(false)
@@ -260,6 +282,7 @@ function App() {
   const loadedSources = sources.filter((source) => loadedSourceIds.includes(source.id))
   const documentReadyCount = sources.filter((source) => sourceState(sourceStatus, source.id).documentReady || libraryStatuses[source.id]?.exists).length
   const recommendedReadyCount = recommendedSources.filter((source) => sourceState(sourceStatus, source.id).documentReady || libraryStatuses[source.id]?.exists).length
+  const searchableCount = sources.filter((source) => sourceState(sourceStatus, source.id).searchable || libraryStatuses[source.id]?.searchable).length
   const answer = useMemo(
     () => answerProjectQuestion(project, selectedQuestion, loadedSourceIds),
     [loadedSourceIds, project, selectedQuestion],
@@ -332,6 +355,10 @@ function App() {
           downloadedAt: status.updatedAt ?? next[status.sourceId]?.downloadedAt,
           bytes: status.bytes,
           localFileKind: status.kind ?? next[status.sourceId]?.localFileKind,
+          indexPath: status.indexPath,
+          indexChars: status.indexChars,
+          indexedAt: status.indexUpdatedAt,
+          searchable: status.searchable,
         }
       })
 
@@ -393,6 +420,11 @@ function App() {
           updatedAt: result.savedAt ?? null,
           extension: result.relativePath?.split('.').pop() ?? null,
           kind: result.kind ?? null,
+          indexExists: false,
+          indexPath: '',
+          indexUpdatedAt: null,
+          indexChars: 0,
+          searchable: false,
         },
       }))
       setDownloadMessages((current) => ({
@@ -408,6 +440,61 @@ function App() {
       }))
     } finally {
       setDownloadingSourceId(null)
+    }
+  }
+
+  async function indexSource(source: SourceManifest) {
+    setIndexingSourceId(source.id)
+    setIndexMessages((current) => ({ ...current, [source.id]: '正在建立文本索引...' }))
+
+    try {
+      const response = await fetch('/api/source-library/index-source', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceId: source.id }),
+      })
+      const result = await response.json() as SourceIndexResult
+
+      if (!response.ok) {
+        throw new Error(result.error ?? '建立索引失败')
+      }
+
+      updateSourceState(source.id, {
+        indexPath: result.indexPath,
+        indexChars: result.indexChars,
+        indexedAt: new Date().toISOString(),
+        searchable: result.searchable,
+      })
+      setLibraryStatuses((current) => ({
+        ...current,
+        [source.id]: {
+          ...(current[source.id] ?? {
+            sourceId: source.id,
+            exists: false,
+            relativePath: sourceLibraryPath(source),
+            bytes: 0,
+            updatedAt: null,
+            extension: null,
+            kind: null,
+          }),
+          indexExists: true,
+          indexPath: result.indexPath,
+          indexUpdatedAt: new Date().toISOString(),
+          indexChars: result.indexChars,
+          searchable: result.searchable,
+        },
+      }))
+      setIndexMessages((current) => ({
+        ...current,
+        [source.id]: `${result.message} 有效文本 ${result.indexChars} 字${result.pageCount ? `，PDF ${result.pageCount} 页` : ''}。`,
+      }))
+    } catch (error) {
+      setIndexMessages((current) => ({
+        ...current,
+        [source.id]: error instanceof Error ? `索引失败：${error.message}` : '索引失败：未知错误。',
+      }))
+    } finally {
+      setIndexingSourceId(null)
     }
   }
 
@@ -746,13 +833,17 @@ function App() {
               <span>推荐就绪率</span>
               <strong>{recommendedReadyCount}/{recommendedSources.length}</strong>
             </div>
+            <div>
+              <span>可搜索索引</span>
+              <strong>{searchableCount} 份</strong>
+            </div>
           </div>
 
           <div className="library-note">
             <strong>下载位置与调用方式</strong>
             <p>
               本机通过 <code>pnpm dev</code> 运行时，“获取到资料库”会优先下载官方附件；如果官方页没有附件，就保存官方页面正文快照。
-              文件会进入 <code>local-library/documents/城市或层级/规范编号.pdf</code> 或 <code>.txt</code>。线上 GitHub Pages 不能写入你的电脑，只保留索引和官方入口。
+              文件会进入 <code>local-library/documents/城市或层级/规范编号.pdf</code> 或 <code>.txt</code>。PDF 下载后可尝试建立文本索引；若有效文本很少，说明该文件需要 OCR 或人工打开查阅。
             </p>
           </div>
 
@@ -773,6 +864,8 @@ function App() {
               const loaded = state.indexLoaded
               const documentReady = state.documentReady || Boolean(localStatus?.exists)
               const localPath = localStatus?.relativePath ?? state.localPath ?? sourceLibraryPath(source)
+              const searchable = state.searchable || Boolean(localStatus?.searchable)
+              const indexAttempted = Boolean(state.indexPath || localStatus?.indexExists)
               return (
                 <article key={source.id} className={`source-card ${loaded ? 'loaded' : 'not-loaded'} ${documentReady ? 'document-ready' : ''}`}>
                   <div className="card-head">
@@ -784,6 +877,9 @@ function App() {
                   <div className="tag-row">
                     <span className={loaded ? 'status-pill index-loaded' : 'status-pill missing'}>{loaded ? '索引已加载' : '索引未加载'}</span>
                     <span className={documentReady ? 'status-pill document-ready' : 'status-pill missing'}>{documentReady ? '全文已就绪' : '全文未下载'}</span>
+                    <span className={searchable ? 'status-pill searchable' : indexAttempted ? 'status-pill needs-ocr' : 'status-pill missing'}>
+                      {searchable ? '可搜索' : indexAttempted ? '需 OCR' : '未建索引'}
+                    </span>
                     <span>{source.access}</span>
                     <span>{source.redistribution}</span>
                   </div>
@@ -810,6 +906,16 @@ function App() {
                         打开本地文件
                       </a>
                     ) : null}
+                    {documentReady ? (
+                      <button type="button" disabled={indexingSourceId === source.id} onClick={() => void indexSource(source)}>
+                        {indexingSourceId === source.id ? '索引中...' : '建立文本索引'}
+                      </button>
+                    ) : null}
+                    {localStatus?.indexExists || state.indexPath ? (
+                      <a href={localFileUrl(localStatus?.indexPath ?? state.indexPath ?? '')} target="_blank" rel="noreferrer">
+                        打开索引
+                      </a>
+                    ) : null}
                     <button type="button" onClick={() => (documentReady ? unmarkDocumentReady(source.id) : markDocumentReady(source.id))}>
                       {documentReady ? '取消全文标记' : '标记本地已有'}
                     </button>
@@ -818,15 +924,16 @@ function App() {
                     <p className="download-message">本地文件：{Math.round(localStatus.bytes / 1024)} KB，{localStatus.extension?.toUpperCase()}，更新时间 {localStatus.updatedAt ? new Date(localStatus.updatedAt).toLocaleString() : '未知'}。</p>
                   ) : null}
                   {downloadMessages[source.id] ? <p className="download-message">{downloadMessages[source.id]}</p> : null}
+                  {indexMessages[source.id] ? <p className="download-message">{indexMessages[source.id]}</p> : null}
                 </article>
               )
             })}
           </div>
 
           <div className="local-search">
-            <div>
-              <strong>本地资料快照搜索</strong>
-              <p>可搜索已保存为 .txt 的官方页面正文快照；PDF 可直接打开查阅，后续再接 PDF 文本抽取。</p>
+              <div>
+                <strong>本地资料快照搜索</strong>
+                <p>可搜索已建立的 PDF 文本索引和官方页面正文快照。若 PDF 抽取有效文本很少，页面会提示需要 OCR 或人工打开查阅。</p>
             </div>
             <div className="query-box">
               <input value={libraryQuery} onChange={(event) => setLibraryQuery(event.target.value)} />
@@ -836,11 +943,12 @@ function App() {
             {libraryResults.length > 0 ? (
               <div className="search-results">
                 {libraryResults.map((result) => (
-                  <article key={`${result.sourceId}-${result.relativePath}`}>
-                    <strong>{result.title}</strong>
-                    <p>{result.snippet}</p>
-                    <a href={localFileUrl(result.relativePath)} target="_blank" rel="noreferrer">打开快照</a>
-                  </article>
+                    <article key={`${result.sourceId}-${result.relativePath}`}>
+                      <strong>{result.title}</strong>
+                      <span>{result.kind === 'text_index' ? 'PDF 文本索引' : '官方页面快照'}</span>
+                      <p>{result.snippet}</p>
+                      <a href={localFileUrl(result.relativePath)} target="_blank" rel="noreferrer">打开索引文件</a>
+                    </article>
                 ))}
               </div>
             ) : null}
@@ -1037,6 +1145,8 @@ function App() {
                 const state = sourceState(sourceStatus, source.id)
                 const localStatus = libraryStatuses[source.id]
                 const localPath = localStatus?.relativePath ?? state.localPath ?? sourceLibraryPath(source)
+                const searchable = state.searchable || localStatus?.searchable
+                const indexAttempted = Boolean(state.indexPath || localStatus?.indexExists)
                 return (
                   <article key={source.id} className={`source-card loaded ${state.documentReady || localStatus?.exists ? 'document-ready' : ''}`}>
                     <div className="card-head"><MapPinned aria-hidden="true" /><span>{source.jurisdiction}</span></div>
@@ -1046,6 +1156,9 @@ function App() {
                       <span className="status-pill index-loaded">索引已加载</span>
                       <span className={state.documentReady || localStatus?.exists ? 'status-pill document-ready' : 'status-pill missing'}>
                         {state.documentReady || localStatus?.exists ? '全文已就绪' : '全文未下载'}
+                      </span>
+                      <span className={searchable ? 'status-pill searchable' : indexAttempted ? 'status-pill needs-ocr' : 'status-pill missing'}>
+                        {searchable ? '可搜索' : indexAttempted ? '需 OCR' : '未建索引'}
                       </span>
                     </div>
                     <div className="library-path">

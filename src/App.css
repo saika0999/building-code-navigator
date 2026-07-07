@@ -382,7 +382,7 @@ input {
 
 .library-status {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 150px 150px 150px;
+  grid-template-columns: minmax(0, 1fr) repeat(4, 140px);
   gap: 12px;
   margin-bottom: 14px;
 }
@@ -599,6 +599,16 @@ input {
 .tag-row .document-ready {
   background: #e1ecff;
   color: #2c568e;
+}
+
+.tag-row .searchable {
+  background: #e7f0d8;
+  color: #4d6f24;
+}
+
+.tag-row .needs-ocr {
+  background: #fff1d9;
+  color: #8a5a12;
 }
 
 .tag-row .missing {

@@ -2,9 +2,17 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { createRequire } from 'node:module'
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { sources } from './src/data/sources'
 
 const localLibraryDirectory = 'local-library'
+const require = createRequire(import.meta.url)
+const pdfjsRoot = path.dirname(require.resolve('pdfjs-dist/package.json'))
+const pdfjsCMapUrl = `${pdfjsRoot.replaceAll(path.sep, '/')}/cmaps/`
+const pdfWatermarkPatterns = [
+  '住房城乡建设部信息公开 浏览专用',
+]
 
 function sanitizePathPart(value: string) {
   return value.replace(/[^\w\u4e00-\u9fa5-]+/g, '-')
@@ -17,6 +25,10 @@ function sourceFileBase(source: (typeof sources)[number]) {
 function sourceLibraryPath(source: (typeof sources)[number], extension: string) {
   const region = sanitizePathPart(source.jurisdiction)
   return `${localLibraryDirectory}/documents/${region}/${sourceFileBase(source)}.${extension}`
+}
+
+function sourceIndexPath(source: (typeof sources)[number]) {
+  return `${localLibraryDirectory}/index/${source.id}.txt`
 }
 
 function readRequestBody(request: import('node:http').IncomingMessage) {
@@ -134,8 +146,10 @@ async function findLocalSourceFile(root: string, source: (typeof sources)[number
 
 async function sourceStatus(root: string, source: (typeof sources)[number]) {
   const localFile = await findLocalSourceFile(root, source)
+  const index = await sourceTextIndexStatus(root, source)
 
-  return localFile ?? {
+  return {
+    ...(localFile ?? {
     sourceId: source.id,
     exists: false,
     relativePath: sourceLibraryPath(source, 'pdf'),
@@ -143,6 +157,8 @@ async function sourceStatus(root: string, source: (typeof sources)[number]) {
     updatedAt: null,
     extension: null,
     kind: null,
+    }),
+    ...index,
   }
 }
 
@@ -163,6 +179,136 @@ async function writeLocalFile(root: string, source: (typeof sources)[number], ex
     relativePath,
     absolutePath,
     bytes: Buffer.byteLength(content),
+  }
+}
+
+async function sourceTextIndexStatus(root: string, source: (typeof sources)[number]) {
+  const relativePath = sourceIndexPath(source)
+  const absolutePath = assertLocalLibraryPath(root, relativePath)
+
+  try {
+    const [stats, content] = await Promise.all([
+      fs.stat(absolutePath),
+      fs.readFile(absolutePath, 'utf8'),
+    ])
+
+    const effectiveText = content
+      .split('\n')
+      .filter((line) => {
+        const value = line.trim()
+        return value &&
+          !value.startsWith('资料源：') &&
+          !value.startsWith('资料源 ID：') &&
+          !value.startsWith('本地文件：') &&
+          !value.startsWith('索引时间：') &&
+          !value.startsWith('PDF 页数：') &&
+          !value.startsWith('有效文本字数：')
+      })
+      .join('\n')
+
+    return {
+      indexExists: true,
+      indexPath: relativePath,
+      indexUpdatedAt: stats.mtime.toISOString(),
+      indexChars: effectiveText.length,
+      searchable: effectiveText.length >= 100,
+    }
+  } catch {
+    return {
+      indexExists: false,
+      indexPath: relativePath,
+      indexUpdatedAt: null,
+      indexChars: 0,
+      searchable: false,
+    }
+  }
+}
+
+function normalizeExtractedText(text: string) {
+  return text
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter((line) => line && !pdfWatermarkPatterns.includes(line))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+async function extractPdfText(absolutePath: string) {
+  const data = new Uint8Array(await fs.readFile(absolutePath))
+  const pdf = await getDocument({
+    data,
+    cMapUrl: pdfjsCMapUrl,
+    cMapPacked: true,
+  }).promise
+  const pages: string[] = []
+
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber)
+    const content = await page.getTextContent()
+    const pageText = content.items
+      .map((item) => ('str' in item ? item.str : ''))
+      .join(' ')
+    const normalized = normalizeExtractedText(pageText)
+
+    if (normalized) {
+      pages.push(`--- PDF Page ${pageNumber} ---\n${normalized}`)
+    }
+  }
+
+  return {
+    pageCount: pdf.numPages,
+    text: pages.join('\n\n').trim(),
+  }
+}
+
+async function buildSourceTextIndex(root: string, source: (typeof sources)[number]) {
+  const localFile = await findLocalSourceFile(root, source)
+
+  if (!localFile?.exists) {
+    throw new Error('本地资料库还没有这份规范文件，请先获取到资料库。')
+  }
+
+  const extension = localFile.extension?.toLowerCase()
+  let text: string
+  let pageCount: number | null = null
+
+  if (extension === 'txt') {
+    text = await fs.readFile(localFile.absolutePath, 'utf8')
+  } else if (extension === 'pdf') {
+    const extracted = await extractPdfText(localFile.absolutePath)
+    text = extracted.text
+    pageCount = extracted.pageCount
+  } else {
+    throw new Error(`暂不支持 ${extension?.toUpperCase() ?? '该'} 文件的文本索引。`)
+  }
+
+  const indexText = [
+    `资料源：${source.title}`,
+    `资料源 ID：${source.id}`,
+    `本地文件：${localFile.relativePath}`,
+    `索引时间：${new Date().toISOString()}`,
+    pageCount ? `PDF 页数：${pageCount}` : '',
+    `有效文本字数：${text.length}`,
+    '',
+    text,
+    '',
+  ].filter(Boolean).join('\n')
+  const relativePath = sourceIndexPath(source)
+  const absolutePath = assertLocalLibraryPath(root, relativePath)
+
+  await fs.mkdir(path.dirname(absolutePath), { recursive: true })
+  await fs.writeFile(absolutePath, indexText)
+
+  return {
+    sourceId: source.id,
+    indexPath: relativePath,
+    indexChars: text.length,
+    pageCount,
+    searchable: text.length >= 100,
+    message: text.length >= 100
+      ? '文本索引已建立。'
+      : '已尝试建立索引，但有效文本很少；该 PDF 可能需要 OCR 或人工打开查阅。',
   }
 }
 
@@ -297,16 +443,26 @@ function localSourceLibraryPlugin() {
           }
 
           const statuses = await Promise.all(sources.map((source) => sourceStatus(server.config.root, source)))
-          const txtStatuses = statuses.filter((status) =>
-            status.exists &&
-            status.extension === 'txt' &&
-            (!sourceIdFilter.size || sourceIdFilter.has(status.sourceId)),
-          )
+          const searchableDocs = statuses
+            .filter((status) => !sourceIdFilter.size || sourceIdFilter.has(status.sourceId))
+            .flatMap((status) => {
+              const docs = []
+
+              if (status.indexExists && status.searchable && status.indexPath) {
+                docs.push({ sourceId: status.sourceId, relativePath: status.indexPath, kind: 'text_index' })
+              }
+
+              if (status.exists && status.extension === 'txt') {
+                docs.push({ sourceId: status.sourceId, relativePath: status.relativePath, kind: 'page_snapshot' })
+              }
+
+              return docs
+            })
           const results = []
 
-          for (const status of txtStatuses) {
-            const source = sources.find((item) => item.id === status.sourceId)
-            const absolutePath = assertLocalLibraryPath(server.config.root, status.relativePath)
+          for (const doc of searchableDocs) {
+            const source = sources.find((item) => item.id === doc.sourceId)
+            const absolutePath = assertLocalLibraryPath(server.config.root, doc.relativePath)
             const text = await fs.readFile(absolutePath, 'utf8')
             const index = text.toLowerCase().indexOf(query.toLowerCase())
 
@@ -314,9 +470,10 @@ function localSourceLibraryPlugin() {
               const start = Math.max(0, index - 90)
               const end = Math.min(text.length, index + query.length + 150)
               results.push({
-                sourceId: status.sourceId,
-                title: source?.title ?? status.sourceId,
-                relativePath: status.relativePath,
+                sourceId: doc.sourceId,
+                title: source?.title ?? doc.sourceId,
+                relativePath: doc.relativePath,
+                kind: doc.kind,
                 snippet: text.slice(start, end).replace(/\s+/g, ' ').trim(),
               })
             }
@@ -324,11 +481,32 @@ function localSourceLibraryPlugin() {
 
           sendJson(response, {
             results,
-            searchableFiles: txtStatuses.length,
-            message: txtStatuses.length === 0 ? '当前本地资料库只有 PDF 等附件，尚无可全文搜索的 .txt 页面快照。' : undefined,
+            searchableFiles: searchableDocs.length,
+            message: searchableDocs.length === 0 ? '当前尚无可搜索文本索引。请先对已下载 PDF 点击“建立文本索引”。' : undefined,
           })
         } catch (error) {
           sendJson(response, { error: error instanceof Error ? error.message : 'Local search failed' }, 500)
+        }
+      })
+
+      server.middlewares.use('/api/source-library/index-source', async (request, response) => {
+        if (request.method !== 'POST') {
+          sendJson(response, { error: 'Method not allowed' }, 405)
+          return
+        }
+
+        try {
+          const body = JSON.parse(await readRequestBody(request)) as { sourceId?: string }
+          const source = sources.find((item) => item.id === body.sourceId)
+
+          if (!source) {
+            sendJson(response, { error: 'Source not found' }, 404)
+            return
+          }
+
+          sendJson(response, await buildSourceTextIndex(server.config.root, source))
+        } catch (error) {
+          sendJson(response, { error: error instanceof Error ? error.message : 'Text indexing failed' }, 500)
         }
       })
 
