@@ -7,6 +7,19 @@ export type ProjectType =
   | 'industrial-upstairs'
   | 'mixed-industrial'
 
+export type BuildingUse =
+  | 'factory'
+  | 'warehouse'
+  | 'headquarters-office'
+  | 'dormitory'
+  | 'cafeteria'
+  | 'exhibition'
+  | 'substation'
+  | 'basement'
+  | 'parking'
+
+export type FireHazard = 'unknown' | 'class_a' | 'class_b' | 'class_c' | 'class_d' | 'class_e' | 'civil'
+
 export type SourceAccess =
   | 'downloadable'
   | 'online_reading'
@@ -29,6 +42,42 @@ export interface ProjectProfile {
   clientBriefQuality: 'unclear' | 'partial' | 'clear'
 }
 
+export interface BuildingAsset {
+  id: string
+  name: string
+  uses: BuildingUse[]
+  floors?: number
+  heightMeters?: number
+  grossAreaSqm?: number
+  fireHazard: FireHazard
+  hasPublicAccess?: boolean
+  hasCooking?: boolean
+  hasSleeping?: boolean
+  hasProduction?: boolean
+  hasStorage?: boolean
+  hasPowerEquipment?: boolean
+  knownUnknowns: string[]
+}
+
+export interface ProjectCase {
+  id: string
+  name: string
+  region: RegionId
+  projectType: ProjectType
+  stage: 'pre_design' | 'concept' | 'scheme'
+  description: string
+  assumptions: string[]
+  siteConditions: {
+    hasIndependentWarehouse: boolean
+    warehouseFireHazard: FireHazard
+    hasSubstation: boolean
+    hasGraySpace: boolean
+    exhibitionOpenToPublic: boolean
+    industrialUpstairsPolicyKnown: boolean
+  }
+  buildings: BuildingAsset[]
+}
+
 export interface SourceManifest {
   id: string
   title: string
@@ -46,6 +95,15 @@ export interface SourceManifest {
   notes: string
 }
 
+export interface SourceReference {
+  id: string
+  sourceId: string
+  label: string
+  pdfPages?: number[]
+  topics: string[]
+  summary: string
+}
+
 export interface RiskItem {
   id: string
   title: string
@@ -56,6 +114,18 @@ export interface RiskItem {
   description: string
   actions: string[]
   sourceIds: string[]
+}
+
+export interface GeneratedFinding {
+  id: string
+  title: string
+  severity: 'high' | 'medium' | 'low'
+  category: 'fire' | 'planning' | 'area' | 'operation' | 'documents'
+  appliesTo: string[]
+  why: string
+  checks: string[]
+  sourceIds: string[]
+  referenceIds?: string[]
 }
 
 export interface IntakeQuestion {
@@ -71,5 +141,16 @@ export interface QaExample {
   answer: string
   assumptions: string[]
   sourceIds: string[]
+  uncertainty: string
+}
+
+export interface GroundedAnswer {
+  question: string
+  conclusion: string
+  appliesTo: string[]
+  assumptions: string[]
+  nextChecks: string[]
+  sourceIds: string[]
+  referenceIds?: string[]
   uncertainty: string
 }
