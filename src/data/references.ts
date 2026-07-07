@@ -135,6 +135,13 @@ export const sourceReferences: SourceReference[] = [
     summary: '宿舍单体应进一步查居室面积、辅助用房、卫生间、公共活动空间、安全疏散和无障碍等专题条文。',
   },
   {
+    id: 'gb-dormitory-project-path',
+    sourceId: 'gb-55025-2022',
+    label: '宿舍、旅馆建筑项目规范路径',
+    topics: ['宿舍', '住宿', '安全', '疏散', '项目规范'],
+    summary: '宿舍类住宿功能应优先核对强制性项目规范，再叠加宿舍建筑设计规范和地方规划口径。',
+  },
+  {
     id: 'jgj-dietetic-building-path',
     sourceId: 'jgj-64-2017',
     label: '饮食建筑设计标准路径',

@@ -13,7 +13,7 @@ import {
   Search,
   Trash2,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { zhongshanIndustrialUpstairsCase } from './data/projectCases'
 import { sourceReferences } from './data/references'
@@ -166,6 +166,8 @@ type LocalSourceState = {
   documentReady: boolean
   localPath?: string
   downloadedAt?: string
+  bytes?: number
+  localFileKind?: 'official_attachment' | 'page_snapshot'
 }
 
 type LocalSourceStatus = Record<string, LocalSourceState>
@@ -213,6 +215,23 @@ type SourceDownloadResult = {
   kind: 'official_attachment' | 'page_snapshot'
 }
 
+type SourceFileStatus = {
+  sourceId: string
+  exists: boolean
+  relativePath: string
+  bytes: number
+  updatedAt: string | null
+  extension: string | null
+  kind: 'official_attachment' | 'page_snapshot' | null
+}
+
+type SourceSearchResult = {
+  sourceId: string
+  title: string
+  relativePath: string
+  snippet: string
+}
+
 function App() {
   const [project, setProject] = useState<ProjectCase>(() => structuredClone(emptyProject))
   const [buildingType, setBuildingType] = useState(buildingTemplates[0].label)
@@ -223,6 +242,12 @@ function App() {
   const [sourceStatus, setSourceStatus] = useState<LocalSourceStatus>(() => readStoredSourceStatus())
   const [downloadMessages, setDownloadMessages] = useState<Record<string, string>>({})
   const [downloadingSourceId, setDownloadingSourceId] = useState<string | null>(null)
+  const [libraryStatuses, setLibraryStatuses] = useState<Record<string, SourceFileStatus>>({})
+  const [libraryMessage, setLibraryMessage] = useState('尚未扫描本地资料库')
+  const [batchAcquiring, setBatchAcquiring] = useState(false)
+  const [libraryQuery, setLibraryQuery] = useState('防火间距')
+  const [libraryResults, setLibraryResults] = useState<SourceSearchResult[]>([])
+  const [librarySearchMessage, setLibrarySearchMessage] = useState('')
 
   const findings = useMemo(() => getFindingsForProject(project), [project])
   const unknowns = useMemo(() => getUnknownsForProject(project), [project])
@@ -233,7 +258,8 @@ function App() {
     [sourceStatus],
   )
   const loadedSources = sources.filter((source) => loadedSourceIds.includes(source.id))
-  const documentReadyCount = sources.filter((source) => sourceState(sourceStatus, source.id).documentReady).length
+  const documentReadyCount = sources.filter((source) => sourceState(sourceStatus, source.id).documentReady || libraryStatuses[source.id]?.exists).length
+  const recommendedReadyCount = recommendedSources.filter((source) => sourceState(sourceStatus, source.id).documentReady || libraryStatuses[source.id]?.exists).length
   const answer = useMemo(
     () => answerProjectQuestion(project, selectedQuestion, loadedSourceIds),
     [loadedSourceIds, project, selectedQuestion],
@@ -243,6 +269,12 @@ function App() {
   const unknownFactoryCount = project.buildings.filter(
     (building) => building.uses.includes('factory') && building.fireHazard === 'unknown',
   ).length
+
+  useEffect(() => {
+    void scanLocalLibrary()
+    // 本地资料库只需要在页面首次打开时扫描一次，后续由下载/扫描按钮主动刷新。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function loadRecommendedPackage() {
     setSourceStatus((current) => {
@@ -282,6 +314,51 @@ function App() {
     })
   }
 
+  function syncSourceStatusFromLibrary(statuses: Record<string, SourceFileStatus>) {
+    setSourceStatus((current) => {
+      const next = { ...current }
+
+      Object.values(statuses).forEach((status) => {
+        if (!status.exists) {
+          return
+        }
+
+        next[status.sourceId] = {
+          ...defaultSourceState(),
+          ...next[status.sourceId],
+          indexLoaded: true,
+          documentReady: true,
+          localPath: status.relativePath,
+          downloadedAt: status.updatedAt ?? next[status.sourceId]?.downloadedAt,
+          bytes: status.bytes,
+          localFileKind: status.kind ?? next[status.sourceId]?.localFileKind,
+        }
+      })
+
+      saveSourceStatus(next)
+      return next
+    })
+  }
+
+  async function scanLocalLibrary() {
+    try {
+      const response = await fetch('/api/source-library/status')
+      const result = await response.json() as { sources?: SourceFileStatus[]; error?: string }
+
+      if (!response.ok) {
+        throw new Error(result.error ?? '扫描失败')
+      }
+
+      const statusMap = Object.fromEntries((result.sources ?? []).map((status) => [status.sourceId, status]))
+      const readyCount = Object.values(statusMap).filter((status) => status.exists).length
+      setLibraryStatuses(statusMap)
+      syncSourceStatusFromLibrary(statusMap)
+      setLibraryMessage(`已扫描本地资料库，发现 ${readyCount} 份本地文件。`)
+    } catch (error) {
+      setLibraryMessage(error instanceof Error ? `扫描失败：${error.message}` : '扫描失败：未知错误。')
+    }
+  }
+
   async function downloadSourceToLibrary(source: SourceManifest) {
     setDownloadingSourceId(source.id)
     setDownloadMessages((current) => ({ ...current, [source.id]: '正在从官方来源获取到本地资料库...' }))
@@ -303,7 +380,21 @@ function App() {
         documentReady: true,
         localPath: result.relativePath,
         downloadedAt: result.savedAt,
+        bytes: result.bytes,
+        localFileKind: result.kind,
       })
+      setLibraryStatuses((current) => ({
+        ...current,
+        [source.id]: {
+          sourceId: source.id,
+          exists: true,
+          relativePath: result.relativePath ?? sourceLibraryPath(source),
+          bytes: result.bytes ?? 0,
+          updatedAt: result.savedAt ?? null,
+          extension: result.relativePath?.split('.').pop() ?? null,
+          kind: result.kind ?? null,
+        },
+      }))
       setDownloadMessages((current) => ({
         ...current,
         [source.id]: `${result.kind === 'page_snapshot' ? '已保存官方页面正文快照' : '已下载官方附件'}：${result.relativePath}，大小 ${Math.round((result.bytes ?? 0) / 1024)} KB。`,
@@ -318,6 +409,48 @@ function App() {
     } finally {
       setDownloadingSourceId(null)
     }
+  }
+
+  async function acquireRecommendedSources() {
+    setBatchAcquiring(true)
+    setLibraryMessage(`开始获取 ${recommendedSources.length} 份推荐资料...`)
+
+    for (const source of recommendedSources) {
+      await downloadSourceToLibrary(source)
+    }
+
+    await scanLocalLibrary()
+    setBatchAcquiring(false)
+  }
+
+  async function searchLocalLibrary() {
+    const query = libraryQuery.trim()
+
+    if (query.length < 2) {
+      setLibraryResults([])
+      setLibrarySearchMessage('请输入至少两个字符。')
+      return
+    }
+
+    try {
+      const sourceIds = loadedSourceIds.join(',')
+      const response = await fetch(`/api/source-library/search?q=${encodeURIComponent(query)}&sourceIds=${encodeURIComponent(sourceIds)}`)
+      const result = await response.json() as { results?: SourceSearchResult[]; message?: string; error?: string; searchableFiles?: number }
+
+      if (!response.ok) {
+        throw new Error(result.error ?? '搜索失败')
+      }
+
+      setLibraryResults(result.results ?? [])
+      setLibrarySearchMessage(result.message ?? `在 ${result.searchableFiles ?? 0} 个可搜索文本中找到 ${result.results?.length ?? 0} 条结果。`)
+    } catch (error) {
+      setLibraryResults([])
+      setLibrarySearchMessage(error instanceof Error ? `搜索失败：${error.message}` : '搜索失败：未知错误。')
+    }
+  }
+
+  function localFileUrl(relativePath: string) {
+    return `/api/source-library/file?path=${encodeURIComponent(relativePath)}`
   }
 
   function addBuilding() {
@@ -609,6 +742,10 @@ function App() {
               <span>本地全文就绪</span>
               <strong>{documentReadyCount} 份</strong>
             </div>
+            <div>
+              <span>推荐就绪率</span>
+              <strong>{recommendedReadyCount}/{recommendedSources.length}</strong>
+            </div>
           </div>
 
           <div className="library-note">
@@ -619,11 +756,23 @@ function App() {
             </p>
           </div>
 
+          <div className="library-toolbar">
+            <button type="button" onClick={() => void acquireRecommendedSources()} disabled={batchAcquiring}>
+              {batchAcquiring ? '获取中...' : '获取全部推荐资料'}
+            </button>
+            <button type="button" onClick={() => void scanLocalLibrary()}>
+              重新扫描资料库
+            </button>
+            <span>{libraryMessage}</span>
+          </div>
+
           <div className="source-grid">
             {recommendedSources.map((source) => {
               const state = sourceState(sourceStatus, source.id)
+              const localStatus = libraryStatuses[source.id]
               const loaded = state.indexLoaded
-              const documentReady = state.documentReady
+              const documentReady = state.documentReady || Boolean(localStatus?.exists)
+              const localPath = localStatus?.relativePath ?? state.localPath ?? sourceLibraryPath(source)
               return (
                 <article key={source.id} className={`source-card ${loaded ? 'loaded' : 'not-loaded'} ${documentReady ? 'document-ready' : ''}`}>
                   <div className="card-head">
@@ -640,7 +789,7 @@ function App() {
                   </div>
                   <div className="library-path">
                     <span>本地调用路径</span>
-                    <code>{state.localPath ?? sourceLibraryPath(source)}</code>
+                    <code>{localPath}</code>
                   </div>
                   <div className="source-actions">
                     <button type="button" onClick={() => (loaded ? unloadSource(source.id) : loadSource(source.id))}>
@@ -656,14 +805,45 @@ function App() {
                     <a href={source.downloadUrl ?? source.sourceUrl} target="_blank" rel="noreferrer">
                       {source.downloadUrl ? '下载/打开官方文件' : '打开官方来源'}
                     </a>
+                    {documentReady ? (
+                      <a href={localFileUrl(localPath)} target="_blank" rel="noreferrer">
+                        打开本地文件
+                      </a>
+                    ) : null}
                     <button type="button" onClick={() => (documentReady ? unmarkDocumentReady(source.id) : markDocumentReady(source.id))}>
                       {documentReady ? '取消全文标记' : '标记本地已有'}
                     </button>
                   </div>
+                  {localStatus?.exists ? (
+                    <p className="download-message">本地文件：{Math.round(localStatus.bytes / 1024)} KB，{localStatus.extension?.toUpperCase()}，更新时间 {localStatus.updatedAt ? new Date(localStatus.updatedAt).toLocaleString() : '未知'}。</p>
+                  ) : null}
                   {downloadMessages[source.id] ? <p className="download-message">{downloadMessages[source.id]}</p> : null}
                 </article>
               )
             })}
+          </div>
+
+          <div className="local-search">
+            <div>
+              <strong>本地资料快照搜索</strong>
+              <p>可搜索已保存为 .txt 的官方页面正文快照；PDF 可直接打开查阅，后续再接 PDF 文本抽取。</p>
+            </div>
+            <div className="query-box">
+              <input value={libraryQuery} onChange={(event) => setLibraryQuery(event.target.value)} />
+              <button type="button" onClick={() => void searchLocalLibrary()}>搜索</button>
+            </div>
+            {librarySearchMessage ? <p className="hint-text">{librarySearchMessage}</p> : null}
+            {libraryResults.length > 0 ? (
+              <div className="search-results">
+                {libraryResults.map((result) => (
+                  <article key={`${result.sourceId}-${result.relativePath}`}>
+                    <strong>{result.title}</strong>
+                    <p>{result.snippet}</p>
+                    <a href={localFileUrl(result.relativePath)} target="_blank" rel="noreferrer">打开快照</a>
+                  </article>
+                ))}
+              </div>
+            ) : null}
           </div>
         </section>
 
@@ -855,23 +1035,26 @@ function App() {
             <div className="source-grid">
               {loadedSources.map((source) => {
                 const state = sourceState(sourceStatus, source.id)
+                const localStatus = libraryStatuses[source.id]
+                const localPath = localStatus?.relativePath ?? state.localPath ?? sourceLibraryPath(source)
                 return (
-                  <article key={source.id} className={`source-card loaded ${state.documentReady ? 'document-ready' : ''}`}>
+                  <article key={source.id} className={`source-card loaded ${state.documentReady || localStatus?.exists ? 'document-ready' : ''}`}>
                     <div className="card-head"><MapPinned aria-hidden="true" /><span>{source.jurisdiction}</span></div>
                     <h3>{source.title}</h3>
                     <p>{source.notes}</p>
                     <div className="tag-row">
                       <span className="status-pill index-loaded">索引已加载</span>
-                      <span className={state.documentReady ? 'status-pill document-ready' : 'status-pill missing'}>
-                        {state.documentReady ? '全文已就绪' : '全文未下载'}
+                      <span className={state.documentReady || localStatus?.exists ? 'status-pill document-ready' : 'status-pill missing'}>
+                        {state.documentReady || localStatus?.exists ? '全文已就绪' : '全文未下载'}
                       </span>
                     </div>
                     <div className="library-path">
                       <span>本地调用路径</span>
-                      <code>{state.localPath ?? sourceLibraryPath(source)}</code>
+                      <code>{localPath}</code>
                     </div>
-                    {state.downloadedAt ? <p className="download-message">最近下载：{new Date(state.downloadedAt).toLocaleString()}</p> : null}
+                    {state.downloadedAt || localStatus?.updatedAt ? <p className="download-message">最近下载：{new Date(state.downloadedAt ?? localStatus?.updatedAt ?? '').toLocaleString()}</p> : null}
                     <a href={source.downloadUrl ?? source.sourceUrl} target="_blank" rel="noreferrer">打开官方来源</a>
+                    {state.documentReady || localStatus?.exists ? <a href={localFileUrl(localPath)} target="_blank" rel="noreferrer">打开本地文件</a> : null}
                   </article>
                 )
               })}

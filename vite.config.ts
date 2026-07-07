@@ -4,14 +4,19 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { sources } from './src/data/sources'
 
+const localLibraryDirectory = 'local-library'
+
 function sanitizePathPart(value: string) {
   return value.replace(/[^\w\u4e00-\u9fa5-]+/g, '-')
 }
 
+function sourceFileBase(source: (typeof sources)[number]) {
+  return sanitizePathPart(source.code ?? source.id)
+}
+
 function sourceLibraryPath(source: (typeof sources)[number], extension: string) {
   const region = sanitizePathPart(source.jurisdiction)
-  const fileName = sanitizePathPart(source.code ?? source.id)
-  return `local-library/documents/${region}/${fileName}.${extension}`
+  return `${localLibraryDirectory}/documents/${region}/${sourceFileBase(source)}.${extension}`
 }
 
 function readRequestBody(request: import('node:http').IncomingMessage) {
@@ -72,14 +77,84 @@ function htmlToReadableText(html: string) {
     .trim()
 }
 
-async function writeLocalFile(root: string, source: (typeof sources)[number], extension: string, content: Buffer | string) {
-  const relativePath = sourceLibraryPath(source, extension)
+function localLibraryRoot(root: string) {
+  return path.resolve(root, localLibraryDirectory)
+}
+
+function assertLocalLibraryPath(root: string, relativePath: string) {
   const absolutePath = path.resolve(root, relativePath)
-  const libraryRoot = path.resolve(root, 'local-library')
+  const libraryRoot = localLibraryRoot(root)
 
   if (!absolutePath.startsWith(libraryRoot + path.sep)) {
     throw new Error('Invalid local library path')
   }
+
+  return absolutePath
+}
+
+async function findLocalSourceFile(root: string, source: (typeof sources)[number]) {
+  const region = sanitizePathPart(source.jurisdiction)
+  const sourceDirectory = path.resolve(root, localLibraryDirectory, 'documents', region)
+  const fileBase = sourceFileBase(source)
+
+  try {
+    const entries = await fs.readdir(sourceDirectory, { withFileTypes: true })
+    const files = entries
+      .filter((entry) => entry.isFile() && entry.name.startsWith(`${fileBase}.`))
+      .map((entry) => entry.name)
+      .sort((a, b) => {
+        const priority = ['.pdf', '.txt', '.doc', '.docx', '.xlsx', '.zip']
+        return priority.findIndex((extension) => a.endsWith(extension)) - priority.findIndex((extension) => b.endsWith(extension))
+      })
+
+    const fileName = files[0]
+    if (!fileName) {
+      return null
+    }
+
+    const absolutePath = path.join(sourceDirectory, fileName)
+    const stats = await fs.stat(absolutePath)
+    const relativePath = path.relative(root, absolutePath).replaceAll(path.sep, '/')
+    const extension = path.extname(fileName).replace('.', '')
+
+    return {
+      sourceId: source.id,
+      exists: true,
+      relativePath,
+      absolutePath,
+      bytes: stats.size,
+      updatedAt: stats.mtime.toISOString(),
+      extension,
+      kind: extension === 'txt' ? 'page_snapshot' : 'official_attachment',
+    }
+  } catch {
+    return null
+  }
+}
+
+async function sourceStatus(root: string, source: (typeof sources)[number]) {
+  const localFile = await findLocalSourceFile(root, source)
+
+  return localFile ?? {
+    sourceId: source.id,
+    exists: false,
+    relativePath: sourceLibraryPath(source, 'pdf'),
+    bytes: 0,
+    updatedAt: null,
+    extension: null,
+    kind: null,
+  }
+}
+
+function sendJson(response: import('node:http').ServerResponse, payload: unknown, statusCode = 200) {
+  response.statusCode = statusCode
+  response.setHeader('Content-Type', 'application/json; charset=utf-8')
+  response.end(JSON.stringify(payload))
+}
+
+async function writeLocalFile(root: string, source: (typeof sources)[number], extension: string, content: Buffer | string) {
+  const relativePath = sourceLibraryPath(source, extension)
+  const absolutePath = assertLocalLibraryPath(root, relativePath)
 
   await fs.mkdir(path.dirname(absolutePath), { recursive: true })
   await fs.writeFile(absolutePath, content)
@@ -163,10 +238,103 @@ function localSourceLibraryPlugin() {
   return {
     name: 'local-source-library',
     configureServer(server: import('vite').ViteDevServer) {
+      server.middlewares.use('/api/source-library/status', async (request, response) => {
+        if (request.method !== 'GET') {
+          sendJson(response, { error: 'Method not allowed' }, 405)
+          return
+        }
+
+        const statuses = await Promise.all(sources.map((source) => sourceStatus(server.config.root, source)))
+        sendJson(response, { sources: statuses })
+      })
+
+      server.middlewares.use('/api/source-library/file', async (request, response) => {
+        if (request.method !== 'GET') {
+          sendJson(response, { error: 'Method not allowed' }, 405)
+          return
+        }
+
+        try {
+          const url = new URL(request.url ?? '', 'http://localhost')
+          const relativePath = url.searchParams.get('path')
+
+          if (!relativePath) {
+            sendJson(response, { error: 'Missing local file path' }, 400)
+            return
+          }
+
+          const absolutePath = assertLocalLibraryPath(server.config.root, relativePath)
+          const extension = path.extname(absolutePath).toLowerCase()
+          const content = await fs.readFile(absolutePath)
+          const contentType = extension === '.pdf'
+            ? 'application/pdf'
+            : extension === '.txt'
+              ? 'text/plain; charset=utf-8'
+              : 'application/octet-stream'
+
+          response.setHeader('Content-Type', contentType)
+          response.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(path.basename(absolutePath))}"`)
+          response.end(content)
+        } catch (error) {
+          sendJson(response, { error: error instanceof Error ? error.message : 'Unable to open local file' }, 500)
+        }
+      })
+
+      server.middlewares.use('/api/source-library/search', async (request, response) => {
+        if (request.method !== 'GET') {
+          sendJson(response, { error: 'Method not allowed' }, 405)
+          return
+        }
+
+        try {
+          const url = new URL(request.url ?? '', 'http://localhost')
+          const query = (url.searchParams.get('q') ?? '').trim()
+          const sourceIdFilter = new Set((url.searchParams.get('sourceIds') ?? '').split(',').filter(Boolean))
+
+          if (query.length < 2) {
+            sendJson(response, { results: [], searchableFiles: 0, message: '请输入至少两个字符。' })
+            return
+          }
+
+          const statuses = await Promise.all(sources.map((source) => sourceStatus(server.config.root, source)))
+          const txtStatuses = statuses.filter((status) =>
+            status.exists &&
+            status.extension === 'txt' &&
+            (!sourceIdFilter.size || sourceIdFilter.has(status.sourceId)),
+          )
+          const results = []
+
+          for (const status of txtStatuses) {
+            const source = sources.find((item) => item.id === status.sourceId)
+            const absolutePath = assertLocalLibraryPath(server.config.root, status.relativePath)
+            const text = await fs.readFile(absolutePath, 'utf8')
+            const index = text.toLowerCase().indexOf(query.toLowerCase())
+
+            if (index >= 0) {
+              const start = Math.max(0, index - 90)
+              const end = Math.min(text.length, index + query.length + 150)
+              results.push({
+                sourceId: status.sourceId,
+                title: source?.title ?? status.sourceId,
+                relativePath: status.relativePath,
+                snippet: text.slice(start, end).replace(/\s+/g, ' ').trim(),
+              })
+            }
+          }
+
+          sendJson(response, {
+            results,
+            searchableFiles: txtStatuses.length,
+            message: txtStatuses.length === 0 ? '当前本地资料库只有 PDF 等附件，尚无可全文搜索的 .txt 页面快照。' : undefined,
+          })
+        } catch (error) {
+          sendJson(response, { error: error instanceof Error ? error.message : 'Local search failed' }, 500)
+        }
+      })
+
       server.middlewares.use('/api/source-library/download', async (request, response) => {
         if (request.method !== 'POST') {
-          response.statusCode = 405
-          response.end(JSON.stringify({ error: 'Method not allowed' }))
+          sendJson(response, { error: 'Method not allowed' }, 405)
           return
         }
 
@@ -175,24 +343,21 @@ function localSourceLibraryPlugin() {
           const source = sources.find((item) => item.id === body.sourceId)
 
           if (!source) {
-            response.statusCode = 404
-            response.end(JSON.stringify({ error: 'Source not found' }))
+            sendJson(response, { error: 'Source not found' }, 404)
             return
           }
 
           const savedSource = await discoverAndSaveSource(source, server.config.root)
 
-          response.setHeader('Content-Type', 'application/json; charset=utf-8')
-          response.end(JSON.stringify({
+          sendJson(response, {
             sourceId: source.id,
             ...savedSource,
             savedAt: new Date().toISOString(),
-          }))
+          })
         } catch (error) {
-          response.statusCode = 500
-          response.end(JSON.stringify({
+          sendJson(response, {
             error: error instanceof Error ? error.message : 'Unknown local download error',
-          }))
+          }, 500)
         }
       })
     },
